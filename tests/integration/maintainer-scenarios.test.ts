@@ -88,22 +88,45 @@ describe("maintainer integration scenarios", () => {
     await expectCli(tmp, ["start", "flaky-fix", "Fix flaky parser regression", "--acceptance", "failing command is captured"]);
     const failedVerify = await captureStdio(() => runCli(["verify", "flaky-fix", "--command", "maintainer-fail"], tmp!));
     expect(failedVerify.exitCode).toBe(9);
+    expect(failedVerify.stdout).not.toContain("leaked-value");
+    expect(failedVerify.stderr).not.toContain("leaked-value");
+
+    const blockedDoneGate = await captureStdio(() => runCli(["gate", "flaky-fix", "--stage", "done"], tmp!));
+    expect(blockedDoneGate).toMatchObject({ exitCode: 1, stdout: "" });
+    expect(blockedDoneGate.stderr).toContain("missing required evidence for command maintainer-fail");
+    expect(blockedDoneGate.stderr).not.toContain("leaked-value");
+
     await expectCli(tmp, ["stop", "flaky-fix", "--status", "blocked"]);
     await expectCli(tmp, ["start", "flaky-fix", "Restart flaky parser regression", "--acceptance", "prior blocker remains visible"]);
+
+    const events = await readEvents(tmp);
+    expect(events.map((event) => event.type)).toEqual(["goal.started", "evidence.added", "goal.stopped", "goal.started"]);
+    const failedEvidenceEvent = events.find((event) => event.type === "evidence.added");
+    const blockedEvent = events.find((event) => event.type === "goal.stopped");
+    expect(failedEvidenceEvent?.data).toMatchObject({ kind: "command", exit_code: 9 });
+    expect(typeof failedEvidenceEvent?.data.evidence_id).toBe("string");
+    expect(typeof failedEvidenceEvent?.data.sha256).toBe("string");
+    expect(blockedEvent?.data).toEqual({ status: "blocked" });
 
     const query = await queryCli(tmp, ["--slug", "flaky-fix"]);
     expect(query.goals).toHaveLength(1);
     const goal = query.goals[0];
     expect(goal).toMatchObject({ slug: "flaky-fix", status: "active", outcome: null });
-    expect(goal.outcomes).toEqual([expect.objectContaining({ status: "blocked" })]);
+    expect(goal.event_count).toBe(4);
+    expect(goal.event_types).toEqual({ "goal.started": 2, "evidence.added": 1, "goal.stopped": 1 });
+    expect(goal.last_event).toMatchObject({ sequence: 4, type: "goal.started" });
+    expect(goal.outcomes).toEqual([expect.objectContaining({ sequence: 3, status: "blocked" })]);
     expect(goal.inferred.prior_failure).toContain("previously ended as blocked");
     expect(goal.verified.evidence).toHaveLength(1);
-    expect(goal.verified.evidence[0]).toMatchObject({ exit_code: 9, redaction_applied: true });
+    expect(goal.verified.evidence[0]).toMatchObject({ exit_code: 9, redaction_applied: true, sha256: failedEvidenceEvent?.data.sha256 });
+    expect(goal.verified.reviews).toEqual([]);
+    expect(goal.done_claim).toEqual({ valid: null, reasons: [] });
 
     const stderr = await readFile(path.join(tmp, goal.verified.evidence[0].stderr_redacted_path), "utf8");
     expect(stderr).toContain("[REDACTED]");
     expect(stderr).not.toContain("leaked-value");
     expect(stderr).not.toContain("api_key=");
+    expect(detectPublishLeaks(stderr)).toEqual([]);
 
     const blocked = await queryCli(tmp, ["--status", "active", "--evidence-kind", "command"]);
     expect(blocked.goals.map((item: { slug: string }) => item.slug)).toEqual(["flaky-fix"]);
@@ -111,7 +134,10 @@ describe("maintainer integration scenarios", () => {
 
   it("stops unsafe publish material before export while status reports and OSS dossiers stay redacted and publish-clean", async () => {
     tmp = await createWorkspace("maintainer-publish-");
-    await writeScenarioConfig(tmp, { commands: [commandConfig("publish-unit", "console.log('publish verification ok')")] });
+    await writeScenarioConfig(tmp, {
+      requireReviewFor: ["publish"],
+      commands: [commandConfig("publish-unit", "console.log('publish verification ok')")],
+    });
 
     const unsafeDraft = "MaintainerPrivateNotes TOKEN=unsafe-secret /home/mathis/project 100.83.96.73 Authorization: Bearer abcdefghijklmnop";
     await writeFile(path.join(tmp, "unsafe-draft.md"), unsafeDraft, "utf8");
@@ -119,11 +145,46 @@ describe("maintainer integration scenarios", () => {
 
     const publishCheck = await captureStdio(() => runCli(["publish-check", "unsafe-draft.md"], tmp!));
     expect(publishCheck.exitCode).toBe(1);
+    expect(publishCheck.stdout).toBe("");
     expect(publishCheck.stderr).toContain("publish-check found");
     expect(publishCheck.stderr).not.toContain("unsafe-secret");
     expect(publishCheck.stderr).not.toContain("/home/mathis");
 
     await expectCli(tmp, ["start", "public-safety", "Fix TOKEN=unsafe-secret /home/mathis/project 100.83.96.73", "--acceptance", "publish draft is redacted"]);
+
+    const blockedPublishGate = await captureStdio(() => runCli(["gate", "public-safety", "--stage", "publish"], tmp!));
+    expect(blockedPublishGate).toMatchObject({ exitCode: 1, stdout: "" });
+    expect(blockedPublishGate.stderr).toContain("missing admissible publish review verdict");
+    expect(blockedPublishGate.stderr).not.toContain("unsafe-secret");
+
+    await expectCli(tmp, ["verify", "public-safety", "--command", "publish-unit"]);
+    await expectCli(tmp, ["review", "public-safety", "--verdict", "GO", "--reviewer", "human", "--stage", "publish"]);
+    await expectCli(tmp, ["gate", "public-safety", "--stage", "publish"]);
+
+    const events = await readEvents(tmp);
+    expect(events.map((event) => event.type)).toEqual(["goal.started", "evidence.added", "review.added"]);
+    const evidenceEvent = events.find((event) => event.type === "evidence.added");
+    const reviewEvent = events.find((event) => event.type === "review.added");
+    expect(evidenceEvent?.data).toMatchObject({ kind: "command", exit_code: 0 });
+    expect(typeof evidenceEvent?.data.evidence_id).toBe("string");
+    expect(typeof evidenceEvent?.data.sha256).toBe("string");
+    expect(reviewEvent?.data).toMatchObject({ stage: "publish", verdict: "GO" });
+
+    const query = await queryCli(tmp, ["--slug", "public-safety"]);
+    expect(query.goals).toHaveLength(1);
+    const goal = query.goals[0];
+    expect(goal).toMatchObject({ slug: "public-safety", status: "active", outcome: null });
+    expect(goal.acceptance).toEqual(["publish draft is redacted"]);
+    expect(goal.event_count).toBe(3);
+    expect(goal.event_types).toEqual({ "goal.started": 1, "evidence.added": 1, "review.added": 1 });
+    expect(goal.last_event).toMatchObject({ sequence: 3, type: "review.added" });
+    expect(goal.outcomes).toEqual([]);
+    expect(goal.verified.evidence).toHaveLength(1);
+    expect(goal.verified.evidence[0]).toMatchObject({ command: [process.execPath, "-e", "console.log('publish verification ok')"], exit_code: 0, sha256: evidenceEvent?.data.sha256, redaction_applied: true });
+    expect(goal.verified.reviews).toHaveLength(1);
+    expect(goal.verified.reviews[0]).toMatchObject({ stage: "publish", verdict: "GO", reviewer: "human", artifact_sha256: reviewEvent?.data.artifact_sha256 });
+    expect(goal.done_claim).toEqual({ valid: null, reasons: [] });
+
     await expectCli(tmp, ["status-report", "--out", "PUBLIC_STATUS.md"]);
     const report = await readFile(path.join(tmp, "PUBLIC_STATUS.md"), "utf8");
     expect(report).toContain("[REDACTED]");
@@ -163,10 +224,15 @@ describe("maintainer integration scenarios", () => {
   it("records adapter-generated local instructions as ledger evidence without launching agents or leaking publish-unsafe text", async () => {
     tmp = await createWorkspace("maintainer-adapter-");
     await writeScenarioConfig(tmp, {
+      requireReviewFor: ["preflight"],
       commands: [commandConfig("adapter-local-check", "const fs = require('fs'); if (!fs.existsSync('instructions/codex.md')) process.exit(4); console.log('adapter instruction evidence ok')")],
     });
 
     await expectCli(tmp, ["start", "adapter-evidence", "Capture adapter evidence", "--acceptance", "adapter instructions are local evidence"]);
+    const blockedPreflightGate = await captureStdio(() => runCli(["gate", "adapter-evidence", "--stage", "preflight"], tmp!));
+    expect(blockedPreflightGate).toMatchObject({ exitCode: 1, stdout: "" });
+    expect(blockedPreflightGate.stderr).toContain("missing admissible preflight review verdict");
+
     await expectCli(tmp, ["adapt", "codex", "Capture adapter evidence", "--out", "instructions/codex.md"]);
 
     const adapterPath = path.join(tmp, "instructions", "codex.md");
@@ -184,19 +250,45 @@ describe("maintainer integration scenarios", () => {
       redaction_applied: true,
     });
     await expectCli(tmp, ["verify", "adapter-evidence", "--command", "adapter-local-check"]);
+    await expectCli(tmp, ["review", "adapter-evidence", "--verdict", "GO", "--reviewer", "adapter", "--stage", "preflight"]);
+    await expectCli(tmp, ["gate", "adapter-evidence", "--stage", "preflight"]);
 
     const events = await readEvents(tmp);
+    expect(events.map((event) => event.type)).toEqual(["goal.started", "evidence.added", "evidence.added", "review.added"]);
     const fileEvidenceEvent = events.find((event) => event.type === "evidence.added" && event.data.evidence_id === adapterEvidence.id);
+    const commandEvidenceEvent = events.find((event) => event.type === "evidence.added" && event.data.evidence_id !== adapterEvidence.id);
+    const reviewEvent = events.find((event) => event.type === "review.added");
     expect(fileEvidenceEvent?.data).toMatchObject({ kind: "file", sha256: adapterEvidence.sha256, artifact_paths: [adapterPath] });
+    expect(commandEvidenceEvent?.data).toMatchObject({ kind: "command", exit_code: 0 });
+    expect(typeof commandEvidenceEvent?.data.sha256).toBe("string");
+    expect(reviewEvent?.data).toMatchObject({ stage: "preflight", verdict: "GO" });
 
     const query = await queryCli(tmp, ["--slug", "adapter-evidence", "--evidence-kind", "file"]);
     expect(query.goals).toHaveLength(1);
-    expect(query.goals[0].verified.evidence).toEqual(
+    const goal = query.goals[0];
+    expect(goal).toMatchObject({ slug: "adapter-evidence", status: "active", outcome: null });
+    expect(goal.event_count).toBe(4);
+    expect(goal.event_types).toEqual({ "goal.started": 1, "evidence.added": 2, "review.added": 1 });
+    expect(goal.last_event).toMatchObject({ sequence: 4, type: "review.added" });
+    expect(goal.outcomes).toEqual([]);
+    expect(goal.verified.evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "file", artifact_paths: ["instructions/codex.md"], sha256: adapterEvidence.sha256, redaction_applied: true }),
+        expect.objectContaining({ kind: "command", exit_code: 0, sha256: commandEvidenceEvent?.data.sha256, redaction_applied: true }),
       ]),
     );
-    expect(query.goals[0].event_types["evidence.added"]).toBe(2);
+    expect(goal.verified.reviews).toEqual([
+      expect.objectContaining({ stage: "preflight", verdict: "GO", reviewer: "adapter", artifact_sha256: reviewEvent?.data.artifact_sha256 }),
+    ]);
+    expect(goal.preflight_review).toMatchObject({
+      required: true,
+      satisfied: true,
+      stage: "preflight",
+      verdict: "GO",
+      reviewer: "adapter",
+      artifact_sha256: reviewEvent?.data.artifact_sha256,
+    });
+    expect(goal.done_claim).toEqual({ valid: null, reasons: [] });
   });
 });
 
