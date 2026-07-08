@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
-import { renderAgentsMd, renderClaudeSnippet, renderCodexSkill } from "../adapters/index.js";
+import { getAdapter, listAdapters } from "../adapters/index.js";
 import { buildDashboard } from "../core/dashboard.js";
 import { queryLedger } from "../core/query.js";
 import { addReview } from "../core/review.js";
@@ -170,28 +170,25 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
   });
   const adapt = program.command("adapt");
 
-  adapt
-    .command("agents-md")
-    .argument("<goalTitle>")
-    .option("--out <path>")
-    .action(async (goalTitle: string, options: AdapterCliOptions) => {
-      await emitGeneratedAdapter(cwd, renderAgentsMd(goalTitle), options);
-    });
+  adapt.command("list").action(() => {
+    const rows = listAdapters().map((adapter) => ({
+      id: adapter.id,
+      label: adapter.label,
+      description: adapter.description,
+      targetFiles: adapter.targetFiles,
+      aliases: adapter.aliases ?? [],
+    }));
+    process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
+  });
 
   adapt
-    .command("codex")
+    .argument("<adapterId>")
     .argument("<goalTitle>")
     .option("--out <path>")
-    .action(async (goalTitle: string, options: AdapterCliOptions) => {
-      await emitGeneratedAdapter(cwd, renderCodexSkill(goalTitle), options);
-    });
-
-  adapt
-    .command("claude")
-    .argument("<goalTitle>")
-    .option("--out <path>")
-    .action(async (goalTitle: string, options: AdapterCliOptions) => {
-      await emitGeneratedAdapter(cwd, renderClaudeSnippet(goalTitle), options);
+    .action(async (adapterId: string, goalTitle: string, options: AdapterCliOptions) => {
+      const adapter = getAdapter(adapterId);
+      if (!adapter) throw new Error(`unknown adapter: ${adapterId}`);
+      await emitGeneratedAdapter(cwd, adapter.render(goalTitle), options);
     });
 
 

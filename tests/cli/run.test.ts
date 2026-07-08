@@ -343,6 +343,52 @@ redaction:
     expect(text).toContain("provider-neutral");
   });
 
+  it("lists available adapters with ids and descriptions", async () => {
+    const result = await captureStdio(() => runCli(["adapt", "list"]));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("agents-md");
+    expect(result.stdout).toContain("codex");
+    expect(result.stdout).toContain("claude-code");
+    expect(result.stdout).toContain("oh-my-pi");
+    expect(result.stdout).toContain("description");
+  });
+
+  it("generates first-class Oh-My-Pi and Claude Code adapter guidance", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+
+    expect(await runCli(["adapt", "oh-my-pi", "Ship CLI", "--out", "OMP.md"], tmp)).toBe(0);
+    expect(await runCli(["adapt", "claude-code", "Ship CLI", "--out", "CLAUDE.md"], tmp)).toBe(0);
+
+    const ohMyPi = await readFile(path.join(tmp, "OMP.md"), "utf8");
+    const claudeCode = await readFile(path.join(tmp, "CLAUDE.md"), "utf8");
+
+    for (const text of [ohMyPi, claudeCode]) {
+      expect(text).toContain("Goal Protocol");
+      expect(text).toContain("goal query --json");
+      expect(text).toContain("goal review --stage preflight");
+      expect(text).toContain("goal verify");
+      expect(text).toContain("goal doctor");
+      expect(text).toContain("evidence");
+      expect(text).toContain("generate-only");
+      expect(text).not.toMatch(/npm publish|git push|gh pr create|launch|daemon|server|MCP install|external write|hosted automation|submit application/i);
+    }
+  });
+
+  it("keeps legacy adapter aliases compatible", async () => {
+    const agentsMd = await captureStdio(() => runCli(["adapt", "agents-md", "Ship CLI"]));
+    const codex = await captureStdio(() => runCli(["adapt", "codex", "Ship CLI"]));
+    const claude = await captureStdio(() => runCli(["adapt", "claude", "Ship CLI"]));
+
+    expect(agentsMd.exitCode).toBe(0);
+    expect(codex.exitCode).toBe(0);
+    expect(claude.exitCode).toBe(0);
+    expect(agentsMd.stdout).toContain("provider-neutral");
+    expect(codex.stdout).toContain("provider-neutral");
+    expect(claude.stdout).toContain("CLAUDE.md");
+  });
+
   it("rejects adapter output paths that are absolute or escape the workspace", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
     const workspace = path.join(tmp, "workspace");
