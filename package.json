@@ -2,6 +2,7 @@
   "name": "goal-runner",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "bin": {
     "goal": "dist/cli/index.js"
