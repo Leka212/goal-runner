@@ -44,6 +44,7 @@ export interface GoalConfig {
 
 export interface GoalEvent {
   id: string;
+  sequence: number;
   type: GoalEventType;
   slug: string;
   created_at: string;

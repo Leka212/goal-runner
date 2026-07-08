@@ -41,6 +41,7 @@ const validConfig = {
 
 const validEvent = {
   id: "evt_1",
+  sequence: 1,
   type: "goal.started",
   slug: "ship",
   created_at: "2026-07-08T00:00:00.000Z",

@@ -2,10 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://goal-protocol.local/schemas/goal-event.schema.json",
   "type": "object",
-  "required": ["id", "type", "slug", "created_at", "data"],
+  "required": ["id", "sequence", "type", "slug", "created_at", "data"],
   "additionalProperties": false,
   "properties": {
     "id": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
     "type": {
       "enum": [
         "goal.started",
