@@ -3,6 +3,7 @@ import { writeDefaultGoalConfig } from "../core/config.js";
 import { doctor } from "../core/doctor.js";
 import { appendGoalStep, startGoal, stopGoal } from "../core/goals.js";
 import { readGoalStatus } from "../core/status.js";
+import { verifyCommand } from "../core/verify.js";
 import type { GoalStatus } from "../core/types.js";
 
 const goalStatuses = ["active", "done", "blocked", "reverted", "abandoned"] as const satisfies readonly GoalStatus[];
@@ -52,6 +53,14 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
     const result = await doctor(cwd);
     if (!result.ok) throw new Error(result.errors.join("; "));
   });
+
+  program
+    .command("verify")
+    .argument("<slug>")
+    .requiredOption("--command <id>")
+    .action(async (slug: string, options: { command: string }) => {
+      await verifyCommand(cwd, slug, options.command);
+    });
 
   try {
     await program.parseAsync(argv, { from: "user" });
