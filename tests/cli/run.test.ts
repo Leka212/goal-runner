@@ -247,6 +247,28 @@ redaction:
     expect(markdown).toContain("## Unmet criteria\n\n- No verified external merged PR count");
     expect(markdown).toContain("No fake stars, downloads, dependents, PRs, maintainer rights, or affiliations are claimed.");
   });
+
+  it("normalizes unprefixed CLI dossier inferences before writing markdown", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+
+    expect(
+      await runCli(
+        [
+          "oss",
+          "dossier",
+          "--subject",
+          "Leka212",
+          "--inferred",
+          "no public registry package found locally",
+        ],
+        tmp,
+      ),
+    ).toBe(0);
+
+    const markdown = await readFile(path.join(tmp, ".goal", "oss", "claude-for-oss-dossier.md"), "utf8");
+    expect(markdown).toContain("## Inferences\n\n- [INFERENCE] no public registry package found locally");
+    expect(markdown).not.toContain("- no public registry package found locally");
+  });
   it("writes generated adapter text only to the requested local file", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
     const out = path.join(tmp, "AGENTS.md");

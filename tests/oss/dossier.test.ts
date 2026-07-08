@@ -19,6 +19,20 @@ describe("Claude for OSS dossier", () => {
     expect(markdown).not.toContain("200,000 downloads achieved");
   });
 
+  it("normalizes unmarked inference items before rendering", () => {
+    const markdown = buildClaudeForOssDossier({
+      subject: "example",
+      verified: [],
+      unknown: [],
+      inferred: ["project may become useful after public release", " [INFERENCE] already marked with whitespace"],
+      unmet: [],
+    });
+
+    expect(markdown).toContain("- [INFERENCE] project may become useful after public release");
+    expect(markdown).toContain("- [INFERENCE] already marked with whitespace");
+    expect(markdown).not.toContain("- project may become useful after public release");
+  });
+
   it("renders empty sections as none instead of inventing metrics", () => {
     const markdown = buildClaudeForOssDossier({
       subject: "example",

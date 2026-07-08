@@ -117,3 +117,12 @@ export interface WorkerCard {
   output_contract: { required_sections: string[] };
   timeout_seconds: number;
 }
+
+export interface OssAudit {
+  subject: string;
+  verified: string[];
+  unknown: string[];
+  inferred: string[];
+  unmet: string[];
+  external_submission: false;
+}

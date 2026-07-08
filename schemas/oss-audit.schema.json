@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goal-protocol.local/schemas/oss-audit.schema.json",
+  "type": "object",
+  "required": ["subject", "verified", "unknown", "inferred", "unmet", "external_submission"],
+  "additionalProperties": false,
+  "properties": {
+    "subject": { "type": "string", "minLength": 1 },
+    "verified": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "unknown": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "inferred": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^\\[INFERENCE\\](?:\\s|$)" }
+    },
+    "unmet": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "external_submission": { "const": false }
+  }
+}

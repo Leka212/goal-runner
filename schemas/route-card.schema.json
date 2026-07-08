@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goal-protocol.local/schemas/route-card.schema.json",
+  "type": "object",
+  "required": ["route"],
+  "additionalProperties": false,
+  "properties": {
+    "route": {
+      "type": "object",
+      "required": [
+        "category",
+        "primary_capability",
+        "supporting_tools",
+        "runtime",
+        "target",
+        "state_scope",
+        "gates",
+        "evidence_required",
+        "fallback"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": ["direct", "mission", "worker-wave", "review", "research", "skill-capability", "publish-gated"]
+        },
+        "primary_capability": { "type": "string", "minLength": 1 },
+        "supporting_tools": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "runtime": {
+          "type": "object",
+          "required": ["engine", "model", "effort"],
+          "additionalProperties": false,
+          "properties": {
+            "engine": { "type": "string", "minLength": 1 },
+            "model": { "type": ["string", "null"], "minLength": 1 },
+            "effort": { "type": ["string", "null"], "minLength": 1 }
+          }
+        },
+        "target": {
+          "type": "object",
+          "required": ["workspace", "machine"],
+          "additionalProperties": false,
+          "properties": {
+            "workspace": { "type": "string", "minLength": 1 },
+            "machine": { "enum": ["local", "remote", "unknown"] }
+          }
+        },
+        "state_scope": {
+          "type": "object",
+          "required": ["repo", "worktree", "memory"],
+          "additionalProperties": false,
+          "properties": {
+            "repo": { "type": ["string", "null"], "minLength": 1 },
+            "worktree": { "type": ["string", "null"], "minLength": 1 },
+            "memory": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "gates": {
+          "type": "object",
+          "required": ["review", "human_approval", "prod", "secrets", "publish"],
+          "additionalProperties": false,
+          "properties": {
+            "review": { "type": "boolean" },
+            "human_approval": { "type": "boolean" },
+            "prod": { "type": "boolean" },
+            "secrets": { "type": "boolean" },
+            "publish": { "type": "boolean" }
+          }
+        },
+        "evidence_required": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "command_or_url"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "type": "string", "minLength": 1 },
+              "command_or_url": { "type": ["string", "null"], "minLength": 1 }
+            }
+          }
+        },
+        "fallback": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

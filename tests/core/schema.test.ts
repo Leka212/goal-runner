@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { validateBySchema } from "../../src/core/schemas.js";
 import type { EvidenceRecord, GoalConfig, GoalEvent, ReviewVerdict } from "../../src/core/types.js";
@@ -69,12 +70,68 @@ const validReview = {
   artifact_sha256: "a".repeat(64),
 } satisfies ReviewVerdict;
 
+const validRouteCard = {
+  route: {
+    category: "worker-wave",
+    primary_capability: "implementation",
+    supporting_tools: ["edit", "bash", "grep"],
+    runtime: { engine: "codex", model: "gpt-5.5", effort: "high" },
+    target: { workspace: "dev/goal-runner", machine: "local" },
+    state_scope: { repo: "goal-runner", worktree: null, memory: ["memory://root/memory_summary.md"] },
+    gates: { review: true, human_approval: false, prod: false, secrets: true, publish: false },
+    evidence_required: [{ type: "test", command_or_url: "npm test -- tests/core/schema.test.ts" }],
+    fallback: "stop and report blocker",
+  },
+};
+
+const validWorkerCard = {
+  id: "schema-worker",
+  role: "Implementation Subagent",
+  engine: "codex",
+  workspace: "dev/goal-runner",
+  objective: "Add planned schemas",
+  files_or_systems: ["src/core/schemas.ts", "schemas"],
+  non_goals: ["external API calls"],
+  tools_allowed: ["edit", "bash", "grep"],
+  gates: ["typecheck", "targeted tests"],
+  acceptance: ["schemas validate planned artifacts"],
+  output_contract: { required_sections: ["[FAIT]", "[VALIDÉ]", "[RISQUES]", "[NEXT]"] },
+  timeout_seconds: 3600,
+};
+
+const validOssAudit = {
+  subject: "Leka212",
+  verified: ["GitHub profile observed"],
+  unknown: ["registry downloads unknown"],
+  inferred: ["[INFERENCE] package impact cannot be verified from local files"],
+  unmet: ["No verified external merged PR count"],
+  external_submission: false,
+};
+
 describe("schemas", () => {
   it("accepts valid core records", () => {
     expect(() => validateBySchema("goal-config", validConfig)).not.toThrow();
     expect(() => validateBySchema("goal-event", validEvent)).not.toThrow();
     expect(() => validateBySchema("evidence", validEvidence)).not.toThrow();
     expect(() => validateBySchema("review-verdict", validReview)).not.toThrow();
+  });
+
+  it("accepts valid planned route, worker, and OSS audit records", () => {
+    expect(() => validateBySchema("route-card", validRouteCard)).not.toThrow();
+    expect(() => validateBySchema("worker-card", validWorkerCard)).not.toThrow();
+    expect(() => validateBySchema("oss-audit", validOssAudit)).not.toThrow();
+  });
+
+  it("rejects invalid planned records", () => {
+    const invalid: unknown = { ...validRouteCard, route: { ...validRouteCard.route, category: "unsafe-prod" } };
+
+    expect(() => validateBySchema("route-card", invalid)).toThrow(/route-card/);
+  });
+
+  it("loads schemas without Node 20.0-incompatible JSON import attributes", () => {
+    const source = readFileSync(new URL("../../src/core/schemas.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain('with { type: "json" }');
   });
 
   it("rejects shell-string verification commands", () => {

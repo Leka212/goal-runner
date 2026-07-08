@@ -12,7 +12,8 @@ import { readGoalStatus } from "../core/status.js";
 import { detectPublishLeaks } from "../core/redaction.js";
 import { verifyCommand } from "../core/verify.js";
 import { buildClaudeForOssDossier } from "../oss/dossier.js";
-import type { GoalStatus, ReviewVerdict, ReviewVerdictValue } from "../core/types.js";
+import { validateBySchema } from "../core/schemas.js";
+import type { GoalStatus, OssAudit, ReviewVerdict, ReviewVerdictValue } from "../core/types.js";
 
 const goalStatuses = ["active", "done", "blocked", "reverted", "abandoned"] as const satisfies readonly GoalStatus[];
 const reviewVerdicts = ["GO", "NO-GO", "GO-WITH-RISKS"] as const satisfies readonly ReviewVerdictValue[];
@@ -137,14 +138,16 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
     .command("audit")
     .requiredOption("--subject <name>")
     .action(async (options: OssAuditCliOptions) => {
-      await writeJsonFile(path.join(ossDir(cwd), "audit.json"), {
+      const audit = {
         subject: options.subject,
         verified: [],
         unknown: [...defaultOssUnknown],
         inferred: [],
         unmet: [],
         external_submission: false,
-      } satisfies OssAuditFile);
+      } satisfies OssAudit;
+      validateBySchema("oss-audit", audit);
+      await writeJsonFile(path.join(ossDir(cwd), "audit.json"), audit);
     });
 
   oss
@@ -152,7 +155,7 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
     .requiredOption("--subject <name>")
     .option("--verified <item>", "verified fact", collectListOption, [] as string[])
     .option("--unknown <item>", "unknown or missing criterion", collectListOption, [] as string[])
-    .option("--inferred <item>", "inference, preferably prefixed with [INFERENCE]", collectListOption, [] as string[])
+    .option("--inferred <item>", "inference; [INFERENCE] is added when omitted", collectListOption, [] as string[])
     .option("--unmet <item>", "unmet criterion", collectListOption, [] as string[])
     .action(async (options: OssDossierCliOptions) => {
       const markdown = buildClaudeForOssDossier({
@@ -207,15 +210,6 @@ interface OssDossierCliOptions {
 
 interface AdapterCliOptions {
   out?: string;
-}
-
-interface OssAuditFile {
-  subject: string;
-  verified: string[];
-  unknown: string[];
-  inferred: string[];
-  unmet: string[];
-  external_submission: false;
 }
 
 function collectListOption(value: string, previous: string[]): string[] {
