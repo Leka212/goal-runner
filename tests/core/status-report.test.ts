@@ -27,10 +27,10 @@ describe("status report", () => {
 
     expect(markdown).toMatch(/^# Goal Status\n/);
     expect(markdown).toContain("## Summary");
-    expect(markdown).toContain("| Goal | Title | Status | Outcome | Evidence | Reviews | Preflight | Done claim | Blockers |");
-    expect(markdown).toContain("| ready-status | Ready status artifact | active | - | 1 verified | 2 verified | GO-WITH-RISKS by adapter | not claimed | none |");
-    expect(markdown).toContain("| bad-done | Invalid done claim | done | done | 0 verified | 0 verified | missing | invalid: missing gate provenance | invalid done claim |");
-    expect(markdown).toContain("| blocked-gates | Blocked by gates | active | - | 0 verified | 0 verified | missing | not claimed | missing required evidence for command unit; missing admissible preflight review verdict; missing admissible review verdict |");
+    expect(markdown).toContain("| Goal | Title | Status | Outcome | Evidence | Latest evidence | Reviews | Latest review | Preflight | Done claim | Blockers |");
+    expect(markdown).toContain("| ready-status | Ready status artifact | active | - | 1 verified | command unit exited 0 | 2 verified | done GO by human | GO-WITH-RISKS by adapter | not claimed | none |");
+    expect(markdown).toContain("| bad-done | Invalid done claim | done | done | 0 verified | none | 0 verified | none | missing | invalid: missing gate provenance | invalid done claim |");
+    expect(markdown).toContain("| blocked-gates | Blocked by gates | active | - | 0 verified | none | 0 verified | none | missing | not claimed | missing required evidence for command unit; missing admissible preflight review verdict; missing admissible review verdict |");
 
     const topBlockers = section(markdown, "Top blockers");
     expect(topBlockers).toContain("bad-done");

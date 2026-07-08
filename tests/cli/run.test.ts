@@ -501,7 +501,7 @@ redaction:
     expect(output.stderr).toBe("");
     const markdown = await readFile(path.join(tmp, "GOAL_STATUS.md"), "utf8");
     expect(markdown).toMatch(/^# Goal Status\n/);
-    expect(markdown).toContain("| Goal | Title | Status | Outcome | Evidence | Reviews | Preflight | Done claim | Blockers |");
+    expect(markdown).toContain("| Goal | Title | Status | Outcome | Evidence | Latest evidence | Reviews | Latest review | Preflight | Done claim | Blockers |");
     expect(markdown).toContain("ship-cli");
     expect(detectPublishLeaks(markdown)).toEqual([]);
   });

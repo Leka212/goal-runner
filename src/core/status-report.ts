@@ -33,8 +33,8 @@ export async function buildStatusReport(root: string): Promise<string> {
 
 function summaryTable(goals: StatusReportGoal[]): string {
   const rows = [
-    "| Goal | Title | Status | Outcome | Evidence | Reviews | Preflight | Done claim | Blockers |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| Goal | Title | Status | Outcome | Evidence | Latest evidence | Reviews | Latest review | Preflight | Done claim | Blockers |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
 
   for (const goal of goals) {
@@ -45,7 +45,9 @@ function summaryTable(goals: StatusReportGoal[]): string {
         goal.query.status,
         goal.query.outcome ?? "-",
         `${goal.query.verified.evidence.length} verified`,
+        latestEvidenceCell(goal),
         `${goal.query.verified.reviews.length} verified`,
+        latestReviewCell(goal.query),
         preflightCell(goal.query),
         doneClaimCell(goal.query),
         summaryBlockerCell(goal),
@@ -153,6 +155,16 @@ function unmetLines(goals: StatusReportGoal[]): string[] {
     for (const reason of goal.dashboard?.done_gate.reasons ?? []) lines.push(`- ${goal.query.slug}: ${reason}`);
   }
   return lines.length > 0 ? lines : ["- none"];
+}
+
+function latestEvidenceCell(goal: StatusReportGoal): string {
+  const evidence = latest(goal.query.verified.evidence);
+  return evidence ? evidenceLabel(goal, evidence) : "none";
+}
+
+function latestReviewCell(goal: LedgerQueryGoal): string {
+  const review = latestReviewForMaintainer(goal.verified.reviews);
+  return review ? `${review.stage} ${review.verdict} by ${review.reviewer}` : "none";
 }
 
 function preflightCell(goal: LedgerQueryGoal): string {
