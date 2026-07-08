@@ -7,19 +7,24 @@ import type { GoalEvent } from "./types.js";
 
 export type NewGoalEvent = Omit<GoalEvent, "id" | "created_at" | "sequence">;
 
-export async function recordEvent(root: string, event: NewGoalEvent): Promise<GoalEvent> {
-  const existing = await readEvents(root);
-  const sequence = existing.length === 0 ? 1 : Math.max(...existing.map((item) => item.sequence)) + 1;
-  const full: GoalEvent = {
-    ...event,
-    id: randomUUID(),
-    created_at: new Date().toISOString(),
-    sequence,
-  };
+const unlocked = Promise.resolve();
+const ledgerLocks = new Map<string, Promise<void>>();
 
-  validateBySchema("goal-event", full);
-  await appendLine(resolveGoalPaths(root).eventsFile, JSON.stringify(full));
-  return full;
+export async function recordEvent(root: string, event: NewGoalEvent): Promise<GoalEvent> {
+  const file = resolveGoalPaths(root).eventsFile;
+  return withLedgerLock(file, async () => {
+    const existing = await readEvents(root);
+    const full: GoalEvent = {
+      ...event,
+      id: randomUUID(),
+      created_at: new Date().toISOString(),
+      sequence: existing.length + 1,
+    };
+
+    validateBySchema("goal-event", full);
+    await appendLine(file, JSON.stringify(full));
+    return full;
+  });
 }
 
 export async function readEvents(root: string): Promise<GoalEvent[]> {
@@ -45,9 +50,31 @@ export async function readEvents(root: string): Promise<GoalEvent[]> {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`invalid ledger line ${index + 1}: ${message}`);
     }
+    const expectedSequence = events.length + 1;
+    if (parsed.sequence !== expectedSequence) {
+      throw new Error(`invalid ledger line ${index + 1}: expected sequence ${expectedSequence}, got ${parsed.sequence}`);
+    }
     events.push(parsed);
   }
 
   return events;
+}
+
+async function withLedgerLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = ledgerLocks.get(key) ?? unlocked;
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.then(() => current, () => current);
+  ledgerLocks.set(key, queued);
+
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (ledgerLocks.get(key) === queued) ledgerLocks.delete(key);
+  }
 }
 

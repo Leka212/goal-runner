@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { readEvents, recordEvent } from "../../src/core/ledger.js";
-import { recordStep, startGoal, stopGoal } from "../../src/core/lifecycle.js";
+import { appendGoalStep, startGoal, stopGoal } from "../../src/core/goals.js";
 
 let tmp: string | undefined;
 
@@ -11,6 +11,17 @@ afterEach(async () => {
   if (tmp) await rm(tmp, { recursive: true, force: true });
   tmp = undefined;
 });
+
+function eventLine(sequence: number, type = "goal.step"): string {
+  return JSON.stringify({
+    id: `event-${sequence}-${type}`,
+    sequence,
+    type,
+    slug: "alpha",
+    created_at: "2026-01-01T00:00:00.000Z",
+    data: {},
+  });
+}
 
 describe("ledger", () => {
   it("appends JSONL events without overwriting prior events", async () => {
@@ -41,6 +52,31 @@ describe("ledger", () => {
     ]);
   });
 
+  it("assigns unique monotonic sequence numbers to concurrent appends on the same ledger", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-concurrent-sequence-"));
+
+    const events = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        recordEvent(tmp!, { type: "goal.step", slug: "alpha", data: { summary: `Step ${index}` } }),
+      ),
+    );
+
+    expect(events.map((event) => event.sequence).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 20 }, (_, index) => index + 1),
+    );
+    await expect(readEvents(tmp)).resolves.toMatchObject(
+      Array.from({ length: 20 }, (_, index) => ({ sequence: index + 1 })),
+    );
+  });
+
+  it("rejects duplicate or non-monotonic ledger sequences", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-bad-sequence-"));
+    await mkdir(path.join(tmp, ".goal"));
+    await writeFile(path.join(tmp, ".goal", "events.jsonl"), `${eventLine(1)}\n${eventLine(1)}\n`, "utf8");
+
+    await expect(readEvents(tmp)).rejects.toThrow(/invalid ledger line 2: expected sequence 2, got 1/i);
+  });
+
   it("rejects malformed ledger lines instead of silently dropping them", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-malformed-"));
     await mkdir(path.join(tmp, ".goal"));
@@ -55,7 +91,7 @@ describe("goal lifecycle", () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-lifecycle-"));
 
     await startGoal(tmp, "ship-cli", "Ship CLI", ["init works", "tests pass"]);
-    await recordStep(tmp, "ship-cli", "Created tests", "test output");
+    await appendGoalStep(tmp, "ship-cli", "Created tests", "test output");
     await expect(stopGoal(tmp, "ship-cli", "done")).resolves.toBeUndefined();
 
     const events = await readEvents(tmp);

@@ -24,7 +24,7 @@ export async function startGoal(root: string, slug: string, title: string, accep
   );
 }
 
-export async function recordStep(root: string, slug: string, summary: string, evidenceExpected: string): Promise<void> {
+export async function appendGoalStep(root: string, slug: string, summary: string, evidenceExpected: string): Promise<void> {
   await recordEvent(root, { type: "goal.step", slug, data: { summary, evidence_expected: evidenceExpected } });
   await appendLine(resolveGoalPaths(root).humanLogFile, `\n- Step: ${summary}\n  Evidence expected: ${evidenceExpected}\n`);
 }
