@@ -14,12 +14,13 @@ import { detectPublishLeaks } from "../core/redaction.js";
 import { verifyCommand } from "../core/verify.js";
 import { buildClaudeForOssDossier } from "../oss/dossier.js";
 import { validateBySchema } from "../core/schemas.js";
-import type { EvidenceKind, GoalEventType, GoalStatus, OssAudit, ReviewVerdict, ReviewVerdictValue } from "../core/types.js";
+import type { EvidenceKind, GoalEventType, GoalStatus, OssAudit, ReviewStage, ReviewVerdict, ReviewVerdictValue } from "../core/types.js";
 
 const goalEventTypes = ["goal.started", "goal.step", "goal.stopped", "evidence.added", "review.added", "gate.added", "decision.recorded"] as const satisfies readonly GoalEventType[];
 const evidenceKinds = ["command", "file", "url", "screenshot", "artifact", "manual-attestation"] as const satisfies readonly EvidenceKind[];
 const goalStatuses = ["active", "done", "blocked", "reverted", "abandoned"] as const satisfies readonly GoalStatus[];
 const reviewVerdicts = ["GO", "NO-GO", "GO-WITH-RISKS"] as const satisfies readonly ReviewVerdictValue[];
+const reviewStages = ["preflight", "done", "publish", "release", "secrets", "prod"] as const satisfies readonly ReviewStage[];
 const reviewers = ["human", "adapter", "command"] as const satisfies readonly ReviewVerdict["reviewer"][];
 
 export async function runCli(argv: string[], cwd = process.cwd()): Promise<number> {
@@ -83,10 +84,12 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
     .argument("<slug>")
     .requiredOption("--verdict <verdict>")
     .option("--reviewer <reviewer>", "reviewer source", "human")
-    .action(async (slug: string, options: { verdict: string; reviewer: string }) => {
+    .option("--stage <stage>", "review stage", "done")
+    .action(async (slug: string, options: { verdict: string; reviewer: string; stage: string }) => {
       if (!isReviewVerdict(options.verdict)) throw new Error(`invalid review verdict: ${options.verdict}`);
       if (!isReviewer(options.reviewer)) throw new Error(`invalid reviewer: ${options.reviewer}`);
-      await addReview(cwd, slug, options.verdict, options.reviewer, []);
+      if (!isReviewStage(options.stage)) throw new Error(`invalid review stage: ${options.stage}`);
+      await addReview(cwd, slug, options.verdict, options.reviewer, [], { stage: options.stage });
     });
 
   program.command("dashboard").action(async () => {
@@ -256,6 +259,10 @@ function isReviewVerdict(value: string): value is ReviewVerdictValue {
 
 function isReviewer(value: string): value is ReviewVerdict["reviewer"] {
   return reviewers.includes(value as ReviewVerdict["reviewer"]);
+}
+
+function isReviewStage(value: string): value is ReviewStage {
+  return reviewStages.includes(value as ReviewStage);
 }
 
 const defaultOssUnknown = [

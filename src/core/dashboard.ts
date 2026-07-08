@@ -39,7 +39,8 @@ export async function buildDashboard(root: string): Promise<DashboardSnapshot> {
   for (const [slug, goalEvents] of Object.entries(eventsBySlug)) {
     const evidence = await listVerifiedEvidence(root, slug);
     const reviews = await listVerifiedReviews(root, slug);
-    const latestReview = latestByCreatedAt(reviews);
+    const doneReviews = reviews.filter((review) => review.stage === "done");
+    const latestReview = latestByCreatedAt(doneReviews);
     const doneGate = await canStopDone(root, slug);
     const goalState = await readGoalState(root, slug);
     const allowedVerdicts = config.gates.review_verdicts.allowed;
@@ -63,7 +64,7 @@ export async function buildDashboard(root: string): Promise<DashboardSnapshot> {
       },
       review: {
         required: reviewRequired,
-        satisfied: !reviewRequired || reviews.some((review) => allowedVerdicts.includes(review.verdict)),
+        satisfied: !reviewRequired || doneReviews.some((review) => allowedVerdicts.includes(review.verdict)),
         latest_verdict: latestReview?.verdict ?? null,
       },
       done_gate: doneGate,

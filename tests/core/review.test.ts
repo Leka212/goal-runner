@@ -22,18 +22,30 @@ describe("review", () => {
 
     const go = await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Ready", evidence: "tests pass" }]);
     const noGo = await addReview(tmp, "ship", "NO-GO", "adapter", [{ severity: "critical", title: "Regression", evidence: "review found a blocker" }]);
+    const preflight = await addReview(
+      tmp,
+      "ship",
+      "GO",
+      "command",
+      [{ severity: "minor", title: "Spec reviewed", evidence: "preflight review passed" }],
+      { stage: "preflight" },
+    );
 
     expect(go.artifact_sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(noGo.artifact_sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(go.artifact_sha256).not.toBe("pending");
     const reviewDir = path.join(tmp, ".goal", "goals", "ship", "reviews");
     const reviewFiles = (await readdir(reviewDir)).filter((name) => name.endsWith(".json"));
-    expect(reviewFiles).toHaveLength(2);
+    expect(reviewFiles).toHaveLength(3);
 
     const persisted = JSON.parse(await readFile(path.join(reviewDir, `${go.id}.json`), "utf8"));
     const { artifact_sha256: _discarded, ...goPayload } = persisted;
-    expect(persisted).toMatchObject({ id: go.id, slug: "ship", verdict: "GO", reviewer: "human", artifact_sha256: go.artifact_sha256 });
+    expect(persisted).toMatchObject({ id: go.id, slug: "ship", stage: "done", verdict: "GO", reviewer: "human", artifact_sha256: go.artifact_sha256 });
     expect(go.artifact_sha256).toBe(canonicalReviewSha256(goPayload));
+    expect(preflight.stage).toBe("preflight");
+    const persistedPreflight = JSON.parse(await readFile(path.join(reviewDir, `${preflight.id}.json`), "utf8"));
+    const { artifact_sha256: _discardedPreflight, ...preflightPayload } = persistedPreflight;
+    expect(preflight.artifact_sha256).toBe(canonicalReviewSha256(preflightPayload));
 
     const events = await readFile(path.join(tmp, ".goal", "events.jsonl"), "utf8");
     expect(events).toContain('"type":"review.added"');
@@ -42,6 +54,8 @@ describe("review", () => {
     expect(events).toContain(noGo.artifact_sha256);
     expect(events).toContain('"verdict":"GO"');
     expect(events).toContain('"verdict":"NO-GO"');
+    expect(events).toContain('"stage":"done"');
+    expect(events).toContain('"stage":"preflight"');
   });
 });
 

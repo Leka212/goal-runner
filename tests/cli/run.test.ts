@@ -60,7 +60,7 @@ describe("cli", () => {
       artifact_paths: [],
       redaction_applied: true,
     });
-    expect(await runCli(["review", "ship-cli", "--verdict", "NO-GO", "--reviewer", "human"], tmp)).toBe(0);
+    expect(await runCli(["review", "ship-cli", "--verdict", "NO-GO", "--reviewer", "human", "--stage", "preflight"], tmp)).toBe(0);
     expect(await runCli(["stop", "ship-cli", "--status", "blocked"], tmp)).toBe(0);
     expect(await runCli(["start", "docs-cli", "Docs CLI", "--acceptance", "docs updated"], tmp)).toBe(0);
 
@@ -74,7 +74,8 @@ describe("cli", () => {
       status: "blocked",
       outcome: "blocked",
       acceptance: ["tests pass"],
-      verified: { evidence: [{ kind: "file" }], reviews: [{ verdict: "NO-GO" }] },
+      verified: { evidence: [{ kind: "file" }], reviews: [{ stage: "preflight", verdict: "NO-GO", reviewer: "human" }] },
+      preflight_review: { required: false, satisfied: false, review_id: expect.any(String), verdict: "NO-GO", reviewer: "human" },
     });
 
     const bySlug = await captureStdio(() => runCli(["query", "--json", "--slug", "docs-cli"], tmp));

@@ -4,7 +4,7 @@ import { loadGoalConfig } from "./config.js";
 import { listVerifiedEvidence } from "./evidence.js";
 import { readJsonFile } from "./fs.js";
 import { listVerifiedReviews } from "./review.js";
-import type { DoneGateProvenance, EvidenceRecord, ReviewVerdict } from "./types.js";
+import type { DoneGateProvenance, EvidenceRecord, ReviewStage, ReviewVerdict } from "./types.js";
 
 export interface DoneGateResult {
   ok: boolean;
@@ -43,11 +43,11 @@ export async function evaluateDoneGate(root: string, slug: string): Promise<Done
     provenance.evidence.push(reference);
   }
 
-  if (config.gates.require_review_for.includes("done")) {
-    const allowed = new Set(config.gates.review_verdicts.allowed);
-    const found = reviews.find((review) => allowed.has(review.verdict));
+  const allowed = new Set(config.gates.review_verdicts.allowed);
+  for (const stage of doneReadinessReviewStages(config.gates.require_review_for)) {
+    const found = reviews.find((review) => review.stage === stage && allowed.has(review.verdict));
     if (!found) {
-      reasons.push("missing admissible review verdict");
+      reasons.push(missingReviewReason(stage));
     } else {
       provenance.reviews.push(reviewProvenanceReference(found));
     }
@@ -73,6 +73,14 @@ function evidenceProvenanceReference(commandId: string, evidence: EvidenceRecord
   return { id: evidence.id, command_id: commandId, sha256: evidence.sha256 };
 }
 
+function doneReadinessReviewStages(stages: ReviewStage[]): ReviewStage[] {
+  return stages.filter((stage) => stage === "preflight" || stage === "done");
+}
+
+function missingReviewReason(stage: ReviewStage): string {
+  return stage === "done" ? "missing admissible review verdict" : `missing admissible ${stage} review verdict`;
+}
+
 function reviewProvenanceReference(review: ReviewVerdict): DoneGateProvenance["reviews"][number] {
-  return { id: review.id, verdict: review.verdict, artifact_sha256: review.artifact_sha256 };
+  return { id: review.id, stage: review.stage, verdict: review.verdict, artifact_sha256: review.artifact_sha256 };
 }

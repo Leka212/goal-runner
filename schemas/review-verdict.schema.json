@@ -7,6 +7,7 @@
   "properties": {
     "id": { "type": "string", "minLength": 1 },
     "slug": { "type": "string", "minLength": 1 },
+    "stage": { "enum": ["preflight", "done", "publish", "release", "secrets", "prod"] },
     "verdict": { "enum": ["GO", "NO-GO", "GO-WITH-RISKS"] },
     "reviewer": { "enum": ["human", "adapter", "command"] },
     "created_at": { "type": "string", "minLength": 1 },

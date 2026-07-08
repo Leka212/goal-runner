@@ -8,6 +8,7 @@ import type {
   DoneGateReviewProvenance,
   GoalConfig,
   GoalEvent,
+  ReviewStage,
   ReviewVerdictValue,
 } from "./types.js";
 
@@ -63,7 +64,8 @@ async function auditDoneClaim(root: string, config: GoalConfig, event: GoalEvent
   const reviewsById = new Map(reviews.map((review) => [review.id, review]));
   for (const reference of provenance.reviews) {
     const review = reviewsById.get(reference.id);
-    if (!review || review.artifact_sha256 !== reference.artifact_sha256 || review.verdict !== reference.verdict) {
+    const referenceStage = reference.stage ?? "done";
+    if (!review || review.artifact_sha256 !== reference.artifact_sha256 || review.verdict !== reference.verdict || review.stage !== referenceStage) {
       reasons.push(`referenced review ${reference.id} is missing or hash-mismatched`);
       continue;
     }
@@ -90,19 +92,22 @@ async function auditDoneClaim(root: string, config: GoalConfig, event: GoalEvent
     }
   }
 
-  if (config.gates.require_review_for.includes("done")) {
-    const allowed = new Set<ReviewVerdictValue>(config.gates.review_verdicts.allowed);
+  const allowed = new Set<ReviewVerdictValue>(config.gates.review_verdicts.allowed);
+  for (const stage of doneReadinessReviewStages(config.gates.require_review_for)) {
     const hasAllowedReview = provenance.reviews.some((reference) => {
       const review = reviewsById.get(reference.id);
+      const referenceStage = reference.stage ?? "done";
       return (
         review !== undefined &&
+        review.stage === stage &&
+        referenceStage === stage &&
         review.artifact_sha256 === reference.artifact_sha256 &&
         review.verdict === reference.verdict &&
         allowed.has(review.verdict) &&
         reviewLedgerKeys.has(reviewProvenanceKey(review))
       );
     });
-    if (!hasAllowedReview) reasons.push("missing gate provenance for admissible review verdict");
+    if (!hasAllowedReview) reasons.push(missingReviewProvenanceReason(stage));
   }
 
   return { event_id: event.id, sequence: event.sequence, slug: event.slug, valid: reasons.length === 0, reasons };
@@ -150,19 +155,31 @@ function reviewLedgerProvenanceKeysAtOrBefore(ledger: GoalEvent[], slug: string,
   const provenance = new Set<string>();
   for (const event of ledger) {
     if (event.type !== "review.added" || event.slug !== slug || event.sequence > sequence) continue;
-    const { review_id, verdict, artifact_sha256 } = event.data;
+    const { review_id, stage, verdict, artifact_sha256 } = event.data;
     if (typeof review_id !== "string" || !isReviewVerdictValue(verdict) || typeof artifact_sha256 !== "string") continue;
-    provenance.add(reviewProvenanceKeyFromParts(review_id, verdict, artifact_sha256));
+    const reviewStage = stage === undefined ? "done" : stage;
+    if (!isReviewStage(reviewStage)) continue;
+    provenance.add(reviewProvenanceKeyFromParts(review_id, reviewStage, verdict, artifact_sha256));
   }
   return provenance;
 }
 
-function reviewProvenanceKey(review: { id: string; verdict: ReviewVerdictValue; artifact_sha256: string }): string {
-  return reviewProvenanceKeyFromParts(review.id, review.verdict, review.artifact_sha256);
+function reviewProvenanceKey(review: { id: string; stage: ReviewStage; verdict: ReviewVerdictValue; artifact_sha256: string }): string {
+  return reviewProvenanceKeyFromParts(review.id, review.stage, review.verdict, review.artifact_sha256);
 }
 
-function reviewProvenanceKeyFromParts(reviewId: string, verdict: ReviewVerdictValue, artifactSha256: string): string {
-  return `${reviewId}\u0000${verdict}\u0000${artifactSha256}`;
+function reviewProvenanceKeyFromParts(reviewId: string, stage: ReviewStage, verdict: ReviewVerdictValue, artifactSha256: string): string {
+  return `${reviewId}\u0000${stage}\u0000${verdict}\u0000${artifactSha256}`;
+}
+
+function doneReadinessReviewStages(stages: ReviewStage[]): ReviewStage[] {
+  return stages.filter((stage) => stage === "preflight" || stage === "done");
+}
+
+function missingReviewProvenanceReason(stage: ReviewStage): string {
+  return stage === "done"
+    ? "missing gate provenance for admissible review verdict"
+    : `missing gate provenance for admissible ${stage} review verdict`;
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -199,11 +216,16 @@ function isReviewReferences(value: unknown): value is DoneGateReviewProvenance[]
     value.every((item) => {
       if (!item || typeof item !== "object") return false;
       const record = item as Record<string, unknown>;
-      return typeof record.id === "string" && isReviewVerdictValue(record.verdict) && typeof record.artifact_sha256 === "string";
+      const stage = record.stage ?? "done";
+      return typeof record.id === "string" && isReviewStage(stage) && isReviewVerdictValue(record.verdict) && typeof record.artifact_sha256 === "string";
     })
   );
 }
 
 function isReviewVerdictValue(value: unknown): value is ReviewVerdictValue {
   return value === "GO" || value === "NO-GO" || value === "GO-WITH-RISKS";
+}
+
+function isReviewStage(value: unknown): value is ReviewStage {
+  return value === "preflight" || value === "done" || value === "publish" || value === "release" || value === "secrets" || value === "prod";
 }

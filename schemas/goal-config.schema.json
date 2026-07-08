@@ -86,7 +86,7 @@
       "properties": {
         "require_review_for": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "enum": ["preflight", "done", "publish", "release", "secrets", "prod"] }
         },
         "review_verdicts": {
           "type": "object",

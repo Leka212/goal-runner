@@ -4,7 +4,7 @@ import { loadGoalConfig } from "./config.js";
 import { readEvents } from "./ledger.js";
 import { listVerifiedReviews } from "./review.js";
 import { auditDoneClaims, type DoneClaimAudit } from "./done-claims.js";
-import type { EvidenceKind, EvidenceRecord, GoalConfig, GoalEvent, GoalEventType, GoalStatus, ReviewVerdict, ReviewVerdictValue } from "./types.js";
+import type { EvidenceKind, EvidenceRecord, GoalConfig, GoalEvent, GoalEventType, GoalStatus, ReviewStage, ReviewVerdict, ReviewVerdictValue } from "./types.js";
 
 export interface LedgerQueryOptions {
   slug?: string;
@@ -37,6 +37,7 @@ export interface LedgerQueryGoal {
     evidence: LedgerQueryEvidenceSummary[];
     reviews: LedgerQueryReviewSummary[];
   };
+  preflight_review: LedgerQueryPreflightReviewSummary;
   done_claim: {
     valid: boolean | null;
     reasons: string[];
@@ -72,8 +73,20 @@ export interface LedgerQueryEvidenceSummary {
   redaction_applied: boolean;
 }
 
+export interface LedgerQueryPreflightReviewSummary {
+  required: boolean;
+  satisfied: boolean;
+  review_id: string | null;
+  stage: "preflight" | null;
+  verdict: ReviewVerdictValue | null;
+  reviewer: ReviewVerdict["reviewer"] | null;
+  created_at: string | null;
+  artifact_sha256: string | null;
+}
+
 export interface LedgerQueryReviewSummary {
   id: string;
+  stage: ReviewStage;
   verdict: ReviewVerdictValue;
   reviewer: ReviewVerdict["reviewer"];
   created_at: string;
@@ -84,13 +97,13 @@ export interface LedgerQueryReviewSummary {
 export async function queryLedger(root: string, options: LedgerQueryOptions = {}): Promise<LedgerQueryResult> {
   const events = await readEvents(root);
   const doneClaimAudits = await auditDoneClaims(root, events);
+  const config = await loadGoalConfig(root);
   const goals: LedgerQueryGoal[] = [];
   const from = parseOptionalTimeBoundary(options.from, "from");
   const to = parseOptionalTimeBoundary(options.to, "to");
   if (from !== undefined && to !== undefined && from > to) throw new Error("invalid time range: from must be before or equal to to");
 
   if (options.repo) {
-    const config = await loadGoalConfig(root);
     const repo = repoFromConfig(config);
     if (repo !== options.repo) {
       return {
@@ -131,6 +144,7 @@ export async function queryLedger(root: string, options: LedgerQueryOptions = {}
         evidence: evidence.sort(byCreatedAtThenId).map((record) => summarizeEvidence(root, record)),
         reviews: reviews.sort(byCreatedAtThenId).map(summarizeReview),
       },
+      preflight_review: summarizePreflightReview(reviews, config),
       done_claim: summarizeDoneClaim(goalEvents, doneClaimAudits),
       inferred: inferGoalSummary(slug, status, outcome, outcomes, goalEvents),
     });
@@ -227,11 +241,29 @@ function summarizeEvidence(root: string, record: EvidenceRecord): LedgerQueryEvi
 function summarizeReview(review: ReviewVerdict): LedgerQueryReviewSummary {
   return {
     id: review.id,
+    stage: review.stage,
     verdict: review.verdict,
     reviewer: review.reviewer,
     created_at: review.created_at,
     findings: review.findings.map((finding) => ({ ...finding })),
     artifact_sha256: review.artifact_sha256,
+  };
+}
+
+function summarizePreflightReview(reviews: ReviewVerdict[], config: GoalConfig): LedgerQueryPreflightReviewSummary {
+  const allowed = new Set(config.gates.review_verdicts.allowed);
+  const preflightReviews = reviews.filter((review) => review.stage === "preflight").sort(byCreatedAtThenId);
+  const admissible = [...preflightReviews].reverse().find((review) => allowed.has(review.verdict));
+  const displayed = admissible ?? preflightReviews.at(-1);
+  return {
+    required: config.gates.require_review_for.includes("preflight"),
+    satisfied: admissible !== undefined,
+    review_id: displayed?.id ?? null,
+    stage: displayed ? "preflight" : null,
+    verdict: displayed?.verdict ?? null,
+    reviewer: displayed?.reviewer ?? null,
+    created_at: displayed?.created_at ?? null,
+    artifact_sha256: displayed?.artifact_sha256 ?? null,
   };
 }
 

@@ -56,6 +56,44 @@ describe("gates", () => {
     expect(goal.status).toBe("done");
   });
 
+  it("requires an admissible preflight review when configured and does not accept a done review instead", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    await requirePreflightReview(tmp);
+    await useFastRequiredCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["spec reviewed", "evidence"]);
+    await verifyCommand(tmp, "ship", "unit");
+    await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Done review", evidence: "not a spec review" }]);
+
+    const blocked = await canStopDone(tmp, "ship");
+
+    expect(blocked.ok).toBe(false);
+    expect(blocked.reasons).toEqual(["missing admissible preflight review verdict"]);
+    await expect(stopGoal(tmp, "ship", "done")).rejects.toThrow(/missing admissible preflight review verdict/);
+
+    const preflight = await addReview(
+      tmp,
+      "ship",
+      "GO",
+      "adapter",
+      [{ severity: "minor", title: "Spec reviewed", evidence: "preflight checklist passed" }],
+      { stage: "preflight" },
+    );
+
+    const ready = await canStopDone(tmp, "ship");
+
+    expect(ready).toEqual({ ok: true, reasons: [] });
+    await expect(stopGoal(tmp, "ship", "done")).resolves.toBeUndefined();
+    const events = (await readFile(path.join(tmp, ".goal", "events.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const stopped = events.find((event) => event.type === "goal.stopped");
+    expect(stopped.data.gate_provenance.reviews).toContainEqual({
+      id: preflight.id,
+      stage: "preflight",
+      verdict: "GO",
+      artifact_sha256: preflight.artifact_sha256,
+    });
+  });
+
   it("does not accept hand-written command evidence without ledger provenance", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
     await writeDefaultGoalConfig(tmp);
@@ -231,6 +269,13 @@ async function requireDoneReview(root: string): Promise<void> {
   const configPath = path.join(root, ".goal", "goal.yaml");
   const config = YAML.parse(await readFile(configPath, "utf8"));
   config.gates.require_review_for = ["done"];
+  await writeFile(configPath, YAML.stringify(config), "utf8");
+}
+
+async function requirePreflightReview(root: string): Promise<void> {
+  const configPath = path.join(root, ".goal", "goal.yaml");
+  const config = YAML.parse(await readFile(configPath, "utf8"));
+  config.gates.require_review_for = ["preflight"];
   await writeFile(configPath, YAML.stringify(config), "utf8");
 }
 

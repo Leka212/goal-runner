@@ -64,6 +64,7 @@ const validReview = {
   id: "rev_1",
   slug: "ship",
   verdict: "GO",
+  stage: "preflight",
   reviewer: "human",
   created_at: "2026-07-08T00:00:00.000Z",
   findings: [{ severity: "important", title: "Unit tests", evidence: "npm test passed" }],
@@ -149,5 +150,12 @@ describe("schemas", () => {
     const invalid: unknown = { ...validEvent, provider: "claude" };
 
     expect(() => validateBySchema("goal-event", invalid)).toThrow(/goal-event/);
+  });
+
+  it("accepts staged review verdicts and legacy review verdicts without stage", () => {
+    expect(() => validateBySchema("review-verdict", validReview)).not.toThrow();
+    const { stage: _discarded, ...legacyReview } = validReview;
+    expect(() => validateBySchema("review-verdict", legacyReview)).not.toThrow();
+    expect(() => validateBySchema("review-verdict", { ...validReview, stage: "implementation" })).toThrow(/review-verdict/);
   });
 });

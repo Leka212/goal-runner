@@ -70,6 +70,7 @@ describe("queryLedger", () => {
             id: review.id,
             verdict: "GO",
             reviewer: "human",
+            stage: "done",
             findings: [{ severity: "minor", title: "Looks good", evidence: "verified locally" }],
           },
         ],
@@ -84,6 +85,42 @@ describe("queryLedger", () => {
       last_event: { type: "goal.started" },
       acceptance: ["docs updated"],
       verified: { evidence: [], reviews: [] },
+    });
+  });
+
+  it("exposes required preflight review state and reviewer verdict details", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-query-"));
+    await writeDefaultGoalConfig(tmp);
+    await requirePreflightReview(tmp);
+    await startGoal(tmp, "ship", "Ship feature", ["spec reviewed"]);
+    const review = await addReview(
+      tmp,
+      "ship",
+      "GO",
+      "adapter",
+      [{ severity: "minor", title: "Spec ready", evidence: "preflight spec review passed" }],
+      { stage: "preflight" },
+    );
+    await startGoal(tmp, "docs", "Document feature", ["docs updated"]);
+
+    const result = await queryLedger(tmp);
+
+    expect(result.goals[0]).toMatchObject({
+      slug: "ship",
+      verified: { reviews: [{ id: review.id, stage: "preflight", verdict: "GO", reviewer: "adapter" }] },
+      preflight_review: {
+        required: true,
+        satisfied: true,
+        review_id: review.id,
+        stage: "preflight",
+        verdict: "GO",
+        reviewer: "adapter",
+        artifact_sha256: review.artifact_sha256,
+      },
+    });
+    expect(result.goals[1]).toMatchObject({
+      slug: "docs",
+      preflight_review: { required: true, satisfied: false, review_id: null, verdict: null, reviewer: null },
     });
   });
 
@@ -233,5 +270,12 @@ async function configureGatedFastCommand(root: string): Promise<void> {
     argv: [process.execPath, "-e", "process.exit(0)"],
     timeout_seconds: 5,
   };
+  await writeFile(configPath, YAML.stringify(config), "utf8");
+}
+
+async function requirePreflightReview(root: string): Promise<void> {
+  const configPath = path.join(root, ".goal", "goal.yaml");
+  const config = YAML.parse(await readFile(configPath, "utf8"));
+  config.gates.require_review_for = ["preflight"];
   await writeFile(configPath, YAML.stringify(config), "utf8");
 }
