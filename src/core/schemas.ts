@@ -1,4 +1,4 @@
-import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
+import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import evidenceSchema from "../../schemas/evidence.schema.json" with { type: "json" };
 import goalConfigSchema from "../../schemas/goal-config.schema.json" with { type: "json" };
 import goalEventSchema from "../../schemas/goal-event.schema.json" with { type: "json" };
