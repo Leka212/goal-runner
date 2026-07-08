@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.goal/
+GOALS.md
+coverage/
+*.log
+.env
+.env.*
