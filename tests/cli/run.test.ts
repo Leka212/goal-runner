@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCli } from "../../src/cli/run.js";
+import { addEvidence } from "../../src/core/evidence.js";
 
 let tmp: string | undefined;
 
@@ -47,11 +48,19 @@ describe("cli", () => {
     expect(await runCli(["status", "missing-goal"], tmp)).toBe(1);
   });
 
-  it("prints machine-readable query JSON for agents", async () => {
+  it("prints machine-readable query JSON for agents and applies every query filter", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
 
     expect(await runCli(["init"], tmp)).toBe(0);
+    await writeRepoConfig(tmp, "local/goal-runner");
     expect(await runCli(["start", "ship-cli", "Ship CLI", "--acceptance", "tests pass"], tmp)).toBe(0);
+    await addEvidence(tmp, {
+      slug: "ship-cli",
+      kind: "file",
+      artifact_paths: [],
+      redaction_applied: true,
+    });
+    expect(await runCli(["review", "ship-cli", "--verdict", "NO-GO", "--reviewer", "human"], tmp)).toBe(0);
     expect(await runCli(["stop", "ship-cli", "--status", "blocked"], tmp)).toBe(0);
     expect(await runCli(["start", "docs-cli", "Docs CLI", "--acceptance", "docs updated"], tmp)).toBe(0);
 
@@ -65,7 +74,7 @@ describe("cli", () => {
       status: "blocked",
       outcome: "blocked",
       acceptance: ["tests pass"],
-      verified: { evidence: [], reviews: [] },
+      verified: { evidence: [{ kind: "file" }], reviews: [{ verdict: "NO-GO" }] },
     });
 
     const bySlug = await captureStdio(() => runCli(["query", "--json", "--slug", "docs-cli"], tmp));
@@ -73,6 +82,29 @@ describe("cli", () => {
 
     const byStatus = await captureStdio(() => runCli(["query", "--json", "--status", "blocked"], tmp));
     expect(JSON.parse(byStatus.stdout).goals.map((goal: { slug: string }) => goal.slug)).toEqual(["ship-cli"]);
+
+    const byRepo = await captureStdio(() => runCli(["query", "--json", "--repo", "local/goal-runner"], tmp));
+    expect(JSON.parse(byRepo.stdout).goals.map((goal: { slug: string }) => goal.slug)).toEqual(["ship-cli", "docs-cli"]);
+
+    const byOtherRepo = await captureStdio(() => runCli(["query", "--json", "--repo", "other/repo"], tmp));
+    expect(JSON.parse(byOtherRepo.stdout).goals).toEqual([]);
+
+    const byEventType = await captureStdio(() => runCli(["query", "--json", "--event-type", "review.added"], tmp));
+    expect(JSON.parse(byEventType.stdout).goals.map((goal: { slug: string }) => goal.slug)).toEqual(["ship-cli"]);
+
+    const byEvidenceKind = await captureStdio(() => runCli(["query", "--json", "--evidence-kind", "file"], tmp));
+    expect(JSON.parse(byEvidenceKind.stdout).goals.map((goal: { slug: string }) => goal.slug)).toEqual(["ship-cli"]);
+
+    const byReviewVerdict = await captureStdio(() => runCli(["query", "--json", "--review-verdict", "NO-GO"], tmp));
+    expect(JSON.parse(byReviewVerdict.stdout).goals.map((goal: { slug: string }) => goal.slug)).toEqual(["ship-cli"]);
+
+    const byFuture = await captureStdio(() => runCli(["query", "--json", "--from", "2100-01-01T00:00:00.000Z"], tmp));
+    expect(JSON.parse(byFuture.stdout).goals).toEqual([]);
+
+    const byRange = await captureStdio(() =>
+      runCli(["query", "--json", "--from", "1970-01-01T00:00:00.000Z", "--to", "2100-01-01T00:00:00.000Z"], tmp),
+    );
+    expect(JSON.parse(byRange.stdout).goals.map((goal: { slug: string }) => goal.slug)).toEqual(["ship-cli", "docs-cli"]);
   });
 
   it("runs configured verification command through the CLI", async () => {
@@ -409,6 +441,12 @@ redaction:
   });
 
 });
+
+async function writeRepoConfig(root: string, repo: string): Promise<void> {
+  const configPath = path.join(root, ".goal", "goal.yaml");
+  const config = await readFile(configPath, "utf8");
+  await writeFile(configPath, config.replace("  public_safe: true", `  repo: ${repo}\n  public_safe: true`), "utf8");
+}
 
 async function writeDoneGatedConfig(root: string, commandId: string, script: string): Promise<void> {
   await writeFile(

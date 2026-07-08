@@ -14,8 +14,10 @@ import { detectPublishLeaks } from "../core/redaction.js";
 import { verifyCommand } from "../core/verify.js";
 import { buildClaudeForOssDossier } from "../oss/dossier.js";
 import { validateBySchema } from "../core/schemas.js";
-import type { GoalStatus, OssAudit, ReviewVerdict, ReviewVerdictValue } from "../core/types.js";
+import type { EvidenceKind, GoalEventType, GoalStatus, OssAudit, ReviewVerdict, ReviewVerdictValue } from "../core/types.js";
 
+const goalEventTypes = ["goal.started", "goal.step", "goal.stopped", "evidence.added", "review.added", "gate.added", "decision.recorded"] as const satisfies readonly GoalEventType[];
+const evidenceKinds = ["command", "file", "url", "screenshot", "artifact", "manual-attestation"] as const satisfies readonly EvidenceKind[];
 const goalStatuses = ["active", "done", "blocked", "reverted", "abandoned"] as const satisfies readonly GoalStatus[];
 const reviewVerdicts = ["GO", "NO-GO", "GO-WITH-RISKS"] as const satisfies readonly ReviewVerdictValue[];
 const reviewers = ["human", "adapter", "command"] as const satisfies readonly ReviewVerdict["reviewer"][];
@@ -96,16 +98,58 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
     .option("--json", "print machine-readable JSON", true)
     .option("--slug <slug>", "filter by goal slug")
     .option("--status <status>", "filter by derived goal status")
-    .action(async (options: { json: boolean; slug?: string; status?: string }) => {
-      const queryOptions: { slug?: string; status?: GoalStatus } = {};
-      if (options.slug) queryOptions.slug = options.slug;
-      if (options.status) {
-        if (!isGoalStatus(options.status)) throw new Error(`invalid status: ${options.status}`);
-        queryOptions.status = options.status;
-      }
-      const result = await queryLedger(cwd, queryOptions);
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    });
+    .option("--repo <repo>", "filter by configured repository")
+    .option("--event-type <type>", "filter by ledger event type")
+    .option("--evidence-kind <kind>", "filter by verified evidence kind")
+    .option("--review-verdict <verdict>", "filter by verified review verdict")
+    .option("--from <iso>", "filter to goals with ledger events at or after this time")
+    .option("--to <iso>", "filter to goals with ledger events at or before this time")
+    .action(
+      async (options: {
+        json: boolean;
+        slug?: string;
+        status?: string;
+        repo?: string;
+        eventType?: string;
+        evidenceKind?: string;
+        reviewVerdict?: string;
+        from?: string;
+        to?: string;
+      }) => {
+        const queryOptions: {
+          slug?: string;
+          status?: GoalStatus;
+          repo?: string;
+          eventType?: GoalEventType;
+          evidenceKind?: EvidenceKind;
+          reviewVerdict?: ReviewVerdictValue;
+          from?: string;
+          to?: string;
+        } = {};
+        if (options.slug) queryOptions.slug = options.slug;
+        if (options.status) {
+          if (!isGoalStatus(options.status)) throw new Error(`invalid status: ${options.status}`);
+          queryOptions.status = options.status;
+        }
+        if (options.repo) queryOptions.repo = options.repo;
+        if (options.eventType) {
+          if (!isGoalEventType(options.eventType)) throw new Error(`invalid event type: ${options.eventType}`);
+          queryOptions.eventType = options.eventType;
+        }
+        if (options.evidenceKind) {
+          if (!isEvidenceKind(options.evidenceKind)) throw new Error(`invalid evidence kind: ${options.evidenceKind}`);
+          queryOptions.evidenceKind = options.evidenceKind;
+        }
+        if (options.reviewVerdict) {
+          if (!isReviewVerdict(options.reviewVerdict)) throw new Error(`invalid review verdict: ${options.reviewVerdict}`);
+          queryOptions.reviewVerdict = options.reviewVerdict;
+        }
+        if (options.from) queryOptions.from = options.from;
+        if (options.to) queryOptions.to = options.to;
+        const result = await queryLedger(cwd, queryOptions);
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      },
+    );
 
   program.command("publish-check").argument("<path>").action(async (input: string) => {
     const inputPath = resolveWorkspacePath(cwd, input);
@@ -196,6 +240,14 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
 
 function isGoalStatus(value: string): value is GoalStatus {
   return goalStatuses.includes(value as GoalStatus);
+}
+
+function isGoalEventType(value: string): value is GoalEventType {
+  return goalEventTypes.includes(value as GoalEventType);
+}
+
+function isEvidenceKind(value: string): value is EvidenceKind {
+  return evidenceKinds.includes(value as EvidenceKind);
 }
 
 function isReviewVerdict(value: string): value is ReviewVerdictValue {

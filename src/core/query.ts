@@ -1,12 +1,19 @@
 import path from "node:path";
 import { listVerifiedEvidence } from "./evidence.js";
+import { loadGoalConfig } from "./config.js";
 import { readEvents } from "./ledger.js";
 import { listVerifiedReviews } from "./review.js";
-import type { EvidenceKind, EvidenceRecord, GoalEvent, GoalEventType, GoalStatus, ReviewVerdict, ReviewVerdictValue } from "./types.js";
+import type { EvidenceKind, EvidenceRecord, GoalConfig, GoalEvent, GoalEventType, GoalStatus, ReviewVerdict, ReviewVerdictValue } from "./types.js";
 
 export interface LedgerQueryOptions {
   slug?: string;
   status?: GoalStatus;
+  repo?: string;
+  eventType?: GoalEventType;
+  evidenceKind?: EvidenceKind;
+  reviewVerdict?: ReviewVerdictValue;
+  from?: string;
+  to?: string;
 }
 
 export interface LedgerQueryResult {
@@ -24,6 +31,7 @@ export interface LedgerQueryGoal {
   event_count: number;
   event_types: Partial<Record<GoalEventType, number>>;
   last_event: LedgerQueryEventSummary | null;
+  outcomes: LedgerQueryOutcomeSummary[];
   verified: {
     evidence: LedgerQueryEvidenceSummary[];
     reviews: LedgerQueryReviewSummary[];
@@ -37,6 +45,12 @@ export interface LedgerQueryGoal {
 export interface LedgerQueryEventSummary {
   sequence: number;
   type: GoalEventType;
+  created_at: string;
+}
+
+export interface LedgerQueryOutcomeSummary {
+  sequence: number;
+  status: GoalStatus;
   created_at: string;
 }
 
@@ -65,15 +79,37 @@ export interface LedgerQueryReviewSummary {
 export async function queryLedger(root: string, options: LedgerQueryOptions = {}): Promise<LedgerQueryResult> {
   const events = await readEvents(root);
   const goals: LedgerQueryGoal[] = [];
+  const from = parseOptionalTimeBoundary(options.from, "from");
+  const to = parseOptionalTimeBoundary(options.to, "to");
+  if (from !== undefined && to !== undefined && from > to) throw new Error("invalid time range: from must be before or equal to to");
+
+  if (options.repo) {
+    const config = await loadGoalConfig(root);
+    const repo = repoFromConfig(config);
+    if (repo !== options.repo) {
+      return {
+        generated_at: new Date().toISOString(),
+        filters: { ...options },
+        goals: [],
+      };
+    }
+  }
 
   for (const [slug, goalEvents] of groupEventsBySlug(events)) {
     const status = statusFromEvents(goalEvents);
     if (options.slug && slug !== options.slug) continue;
     if (options.status && status !== options.status) continue;
+    if (options.eventType && !goalEvents.some((event) => event.type === options.eventType)) continue;
+    if (!eventsOverlapTimeRange(goalEvents, from, to)) continue;
 
     const evidence = await listVerifiedEvidence(root, slug);
+    if (options.evidenceKind && !evidence.some((record) => record.kind === options.evidenceKind)) continue;
+
     const reviews = await listVerifiedReviews(root, slug);
-    const outcome = outcomeFromEvents(goalEvents);
+    if (options.reviewVerdict && !reviews.some((review) => review.verdict === options.reviewVerdict)) continue;
+
+    const outcome = currentOutcomeFromEvents(goalEvents);
+    const outcomes = outcomeHistoryFromEvents(goalEvents);
 
     goals.push({
       slug,
@@ -84,11 +120,12 @@ export async function queryLedger(root: string, options: LedgerQueryOptions = {}
       event_count: goalEvents.length,
       event_types: eventTypes(goalEvents),
       last_event: summarizeEvent(goalEvents.at(-1)),
+      outcomes,
       verified: {
         evidence: evidence.sort(byCreatedAtThenId).map((record) => summarizeEvidence(root, record)),
         reviews: reviews.sort(byCreatedAtThenId).map(summarizeReview),
       },
-      inferred: inferGoalSummary(slug, status, outcome, goalEvents),
+      inferred: inferGoalSummary(slug, status, outcome, outcomes, goalEvents),
     });
   }
 
@@ -110,21 +147,32 @@ function groupEventsBySlug(events: GoalEvent[]): Map<string, GoalEvent[]> {
 }
 
 function statusFromEvents(events: GoalEvent[]): GoalStatus {
-  return outcomeFromEvents(events) ?? "active";
-}
-
-function outcomeFromEvents(events: GoalEvent[]): GoalStatus | null {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event.type !== "goal.stopped") continue;
-    const status = event.data.status;
+  const lifecycleEvent = latestLifecycleEvent(events);
+  if (lifecycleEvent?.type === "goal.stopped") {
+    const status = lifecycleEvent.data.status;
     if (isGoalStatus(status)) return status;
   }
-  return null;
+  return "active";
+}
+
+function currentOutcomeFromEvents(events: GoalEvent[]): GoalStatus | null {
+  const lifecycleEvent = latestLifecycleEvent(events);
+  if (lifecycleEvent?.type !== "goal.stopped") return null;
+  const status = lifecycleEvent.data.status;
+  return isGoalStatus(status) ? status : null;
+}
+
+function outcomeHistoryFromEvents(events: GoalEvent[]): LedgerQueryOutcomeSummary[] {
+  return events.flatMap((event) => {
+    if (event.type !== "goal.stopped") return [];
+    const status = event.data.status;
+    return isGoalStatus(status) ? [{ sequence: event.sequence, status, created_at: event.created_at }] : [];
+  });
 }
 
 function titleFromEvents(events: GoalEvent[]): string | null {
-  for (const event of events) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
     if (event.type !== "goal.started") continue;
     if (typeof event.data.title === "string") return event.data.title;
   }
@@ -132,7 +180,8 @@ function titleFromEvents(events: GoalEvent[]): string | null {
 }
 
 function acceptanceFromEvents(events: GoalEvent[]): string[] {
-  for (const event of events) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
     if (event.type !== "goal.started") continue;
     if (Array.isArray(event.data.acceptance) && event.data.acceptance.every((item) => typeof item === "string")) {
       return [...event.data.acceptance];
@@ -183,13 +232,19 @@ function inferGoalSummary(
   slug: string,
   status: GoalStatus,
   outcome: GoalStatus | null,
+  outcomes: LedgerQueryOutcomeSummary[],
   events: GoalEvent[],
 ): LedgerQueryGoal["inferred"] {
   const summary = outcome
     ? `[INFERENCE] ${slug} stopped with outcome ${outcome} after ${events.length} ledger event(s).`
     : `[INFERENCE] ${slug} is currently ${status} with ${events.length} ledger event(s).`;
-  const priorFailure = outcome && outcome !== "done" ? `[INFERENCE] ${slug} previously ended as ${outcome}.` : null;
-  return { summary, prior_failure: priorFailure };
+  const priorFailure = [...outcomes].reverse().find((item) => item.status !== "done");
+  return {
+    summary,
+    prior_failure: priorFailure
+      ? `[INFERENCE] ${slug} ${outcome === priorFailure.status ? "ended" : "previously ended"} as ${priorFailure.status}.`
+      : null,
+  };
 }
 
 function workspaceRelativePath(root: string, file: string): string {
@@ -207,3 +262,37 @@ function byCreatedAtThenId<T extends { created_at: string; id: string }>(left: T
 function isGoalStatus(value: unknown): value is GoalStatus {
   return value === "active" || value === "done" || value === "blocked" || value === "reverted" || value === "abandoned";
 }
+
+function latestLifecycleEvent(events: GoalEvent[]): GoalEvent | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.type === "goal.started" || event.type === "goal.stopped") return event;
+  }
+  return null;
+}
+
+function parseOptionalTimeBoundary(value: string | undefined, name: "from" | "to"): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) throw new Error(`invalid ${name}: ${value}`);
+  return parsed;
+}
+
+function eventsOverlapTimeRange(events: GoalEvent[], from: number | undefined, to: number | undefined): boolean {
+  if (from === undefined && to === undefined) return true;
+  return events.some((event) => {
+    const timestamp = Date.parse(event.created_at);
+    if (Number.isNaN(timestamp)) return false;
+    if (from !== undefined && timestamp < from) return false;
+    if (to !== undefined && timestamp > to) return false;
+    return true;
+  });
+}
+
+
+function repoFromConfig(config: GoalConfig): string | null {
+  if (config.project.repo) return config.project.repo;
+  if (config.oss?.github_owner && config.oss.github_repo) return `${config.oss.github_owner}/${config.oss.github_repo}`;
+  return null;
+}
+
