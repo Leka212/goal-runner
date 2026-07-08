@@ -2,6 +2,8 @@
 
 Goal Protocol is a provider-neutral evidence layer for AI-assisted open-source maintenance.
 
+Repository: https://github.com/Leka212/goal-runner
+
 It does not replace Claude Code, Codex, Cline, Aider, OpenHands, Taskmaster, PR-Agent, Release Please, or GitHub release notes. It gives those tools a shared maintainer goal format, append-only evidence ledger, review gates, and publish-safe dossier workflow.
 
 Default posture:

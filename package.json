@@ -1,9 +1,18 @@
 {
   "name": "goal-runner",
   "version": "0.1.0",
+  "description": "Provider-neutral evidence layer for AI-assisted open-source maintenance",
   "private": true,
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Leka212/goal-runner.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Leka212/goal-runner/issues"
+  },
+  "homepage": "https://github.com/Leka212/goal-runner#readme",
   "bin": {
     "goal": "dist/cli/index.js"
   },
