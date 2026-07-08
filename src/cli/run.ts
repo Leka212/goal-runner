@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
+import { renderAgentsMd, renderClaudeSnippet, renderCodexSkill } from "../adapters/index.js";
 import { buildDashboard } from "../core/dashboard.js";
 import { addReview } from "../core/review.js";
 import { writeDefaultGoalConfig } from "../core/config.js";
@@ -86,6 +87,32 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
   program.command("dashboard").action(async () => {
     await buildDashboard(cwd);
   });
+  const adapt = program.command("adapt");
+
+  adapt
+    .command("agents-md")
+    .argument("<goalTitle>")
+    .option("--out <path>")
+    .action(async (goalTitle: string, options: AdapterCliOptions) => {
+      await emitGeneratedAdapter(cwd, renderAgentsMd(goalTitle), options);
+    });
+
+  adapt
+    .command("codex")
+    .argument("<goalTitle>")
+    .option("--out <path>")
+    .action(async (goalTitle: string, options: AdapterCliOptions) => {
+      await emitGeneratedAdapter(cwd, renderCodexSkill(goalTitle), options);
+    });
+
+  adapt
+    .command("claude")
+    .argument("<goalTitle>")
+    .option("--out <path>")
+    .action(async (goalTitle: string, options: AdapterCliOptions) => {
+      await emitGeneratedAdapter(cwd, renderClaudeSnippet(goalTitle), options);
+    });
+
 
 
   const oss = program.command("oss");
@@ -162,6 +189,10 @@ interface OssDossierCliOptions {
   unmet: string[];
 }
 
+interface AdapterCliOptions {
+  out?: string;
+}
+
 interface OssAuditFile {
   subject: string;
   verified: string[];
@@ -173,6 +204,17 @@ interface OssAuditFile {
 
 function collectListOption(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+async function emitGeneratedAdapter(root: string, text: string, options: AdapterCliOptions): Promise<void> {
+  if (!options.out) {
+    process.stdout.write(text);
+    return;
+  }
+
+  const outPath = path.resolve(root, options.out);
+  await ensureDir(path.dirname(outPath));
+  await writeFile(outPath, text, "utf8");
 }
 
 function ossDir(root: string): string {

@@ -14,6 +14,24 @@ export function capOutput(input: string, maxBytes: number): string {
   return `${visible}\n[TRUNCATED ${buffer.byteLength - limit} bytes]`;
 }
 
+export function detectPublishLeaks(text: string): string[] {
+  const findings: string[] = [];
+  if (hasSecretLikeText(text)) findings.push("secret-like token text");
+  if (/\/home\/mathis\b/i.test(text)) findings.push("private home path");
+  if (/\b(?:Neody|Linda)\b/i.test(text)) findings.push("private project name");
+  if (/\b\d{1,3}(?:\.\d{1,3}){3}\b/.test(text)) findings.push("ip address");
+  return findings;
+}
+
+function hasSecretLikeText(text: string): boolean {
+  return (
+    /\b(?:TOKEN|SECRET|PASSWORD|COOKIE|API[_-]?KEY)\b\s*[:=]/i.test(text) ||
+    /\bAuthorization\s*:\s*Bearer\s+\S+/i.test(text) ||
+    /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}\b/i.test(text) ||
+    /\b\.env(?:\.[A-Za-z0-9_-]+)?\b/i.test(text)
+  );
+}
+
 function parsePattern(pattern: string): { source: string; flags: string } {
   if (pattern.startsWith("(?i)")) return { source: pattern.slice(4), flags: "gi" };
   return { source: pattern, flags: "g" };

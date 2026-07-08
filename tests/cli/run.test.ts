@@ -247,6 +247,18 @@ redaction:
     expect(markdown).toContain("## Unmet criteria\n\n- No verified external merged PR count");
     expect(markdown).toContain("No fake stars, downloads, dependents, PRs, maintainer rights, or affiliations are claimed.");
   });
+  it("writes generated adapter text only to the requested local file", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+    const out = path.join(tmp, "AGENTS.md");
+
+    expect(await runCli(["adapt", "agents-md", "Ship CLI", "--out", out], tmp)).toBe(0);
+
+    const text = await readFile(out, "utf8");
+    expect(text).toContain("Ship CLI");
+    expect(text).toContain("generate-only");
+    expect(text).toContain("provider-neutral");
+  });
+
 });
 
 async function writeDoneGatedConfig(root: string, commandId: string, script: string): Promise<void> {
