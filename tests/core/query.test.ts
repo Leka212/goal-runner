@@ -1,0 +1,154 @@
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { addEvidence } from "../../src/core/evidence.js";
+import { startGoal, appendGoalStep, stopGoal } from "../../src/core/goals.js";
+import { queryLedger } from "../../src/core/query.js";
+import { addReview, reviewArtifactSha256 } from "../../src/core/review.js";
+import { writeDefaultGoalConfig } from "../../src/core/config.js";
+import type { ReviewVerdict } from "../../src/core/types.js";
+
+let tmp: string | undefined;
+
+afterEach(async () => {
+  if (tmp) await rm(tmp, { recursive: true, force: true });
+  tmp = undefined;
+});
+
+describe("queryLedger", () => {
+  it("returns an empty goal list for an empty ledger", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-query-"));
+    await writeDefaultGoalConfig(tmp);
+
+    await expect(queryLedger(tmp)).resolves.toMatchObject({ goals: [] });
+  });
+
+  it("returns status, outcome, event, acceptance, evidence, and admissible review summaries for multiple goals", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-query-"));
+    await writeDefaultGoalConfig(tmp);
+
+    await startGoal(tmp, "ship", "Ship feature", ["tests pass", "reviewed"]);
+    await appendGoalStep(tmp, "ship", "Implemented feature", "unit evidence");
+    const evidence = await addEvidence(tmp, {
+      slug: "ship",
+      kind: "manual-attestation",
+      artifact_paths: [],
+      redaction_applied: true,
+    });
+    const review = await addReview(tmp, "ship", "GO", "human", [
+      { severity: "minor", title: "Looks good", evidence: "verified locally" },
+    ]);
+    await stopGoal(tmp, "ship", "blocked");
+
+    await startGoal(tmp, "docs", "Document feature", ["docs updated"]);
+
+    const result = await queryLedger(tmp);
+
+    expect(result.goals.map((goal) => goal.slug)).toEqual(["ship", "docs"]);
+    expect(result.goals[0]).toMatchObject({
+      slug: "ship",
+      title: "Ship feature",
+      status: "blocked",
+      outcome: "blocked",
+      event_count: 5,
+      last_event: { type: "goal.stopped" },
+      acceptance: ["tests pass", "reviewed"],
+      verified: {
+        evidence: [
+          {
+            id: evidence.id,
+            kind: "manual-attestation",
+            artifact_paths: [],
+            redaction_applied: true,
+          },
+        ],
+        reviews: [
+          {
+            id: review.id,
+            verdict: "GO",
+            reviewer: "human",
+            findings: [{ severity: "minor", title: "Looks good", evidence: "verified locally" }],
+          },
+        ],
+      },
+    });
+    expect(result.goals[0].inferred.summary).toContain("blocked");
+    expect(result.goals[1]).toMatchObject({
+      slug: "docs",
+      status: "active",
+      outcome: null,
+      event_count: 1,
+      last_event: { type: "goal.started" },
+      acceptance: ["docs updated"],
+      verified: { evidence: [], reviews: [] },
+    });
+  });
+
+  it("excludes forged evidence and review files from verified query data", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-query-"));
+    await writeDefaultGoalConfig(tmp);
+    await startGoal(tmp, "ship", "Ship feature", ["tests pass"]);
+    const verifiedEvidence = await addEvidence(tmp, {
+      slug: "ship",
+      kind: "manual-attestation",
+      artifact_paths: [],
+      redaction_applied: true,
+    });
+    const verifiedReview = await addReview(tmp, "ship", "GO-WITH-RISKS", "human", []);
+
+    const evidenceDir = path.join(tmp, ".goal", "goals", "ship", "evidence");
+    await writeFile(
+      path.join(evidenceDir, "forged.json"),
+      JSON.stringify({
+        id: "forged-evidence",
+        slug: "ship",
+        kind: "manual-attestation",
+        created_at: "2026-01-01T00:00:00.000Z",
+        artifact_paths: [],
+        redaction_applied: true,
+      }),
+      "utf8",
+    );
+
+    const forgedReviewPayload = {
+      id: "forged-review",
+      slug: "ship",
+      verdict: "GO",
+      reviewer: "human",
+      created_at: "2026-01-01T00:00:00.000Z",
+      findings: [{ severity: "minor", title: "Fake", evidence: "not in ledger" }],
+    } satisfies Omit<ReviewVerdict, "artifact_sha256">;
+    await mkdir(path.join(tmp, ".goal", "goals", "ship", "reviews"), { recursive: true });
+    await writeFile(
+      path.join(tmp, ".goal", "goals", "ship", "reviews", "forged.json"),
+      JSON.stringify({ ...forgedReviewPayload, artifact_sha256: reviewArtifactSha256(forgedReviewPayload) }),
+      "utf8",
+    );
+
+    const result = await queryLedger(tmp);
+
+    expect(result.goals).toHaveLength(1);
+    expect(result.goals[0].verified.evidence.map((item) => item.id)).toEqual([verifiedEvidence.id]);
+    expect(result.goals[0].verified.reviews.map((item) => item.id)).toEqual([verifiedReview.id]);
+  });
+
+  it("filters goals by slug and status", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-query-"));
+    await writeDefaultGoalConfig(tmp);
+    await startGoal(tmp, "ship", "Ship feature", ["tests pass"]);
+    await stopGoal(tmp, "ship", "blocked");
+    await startGoal(tmp, "docs", "Document feature", ["docs updated"]);
+
+    await expect(queryLedger(tmp, { slug: "docs" })).resolves.toMatchObject({ goals: [{ slug: "docs" }] });
+    await expect(queryLedger(tmp, { status: "blocked" })).resolves.toMatchObject({ goals: [{ slug: "ship" }] });
+  });
+
+  it("rejects a corrupted ledger instead of returning untrustworthy query data", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-query-"));
+    await writeDefaultGoalConfig(tmp);
+    await writeFile(path.join(tmp, ".goal", "events.jsonl"), "not-json\n", "utf8");
+
+    await expect(queryLedger(tmp)).rejects.toThrow("invalid ledger line 1");
+  });
+});

@@ -3,6 +3,7 @@ import path from "node:path";
 import { Command } from "commander";
 import { renderAgentsMd, renderClaudeSnippet, renderCodexSkill } from "../adapters/index.js";
 import { buildDashboard } from "../core/dashboard.js";
+import { queryLedger } from "../core/query.js";
 import { addReview } from "../core/review.js";
 import { writeDefaultGoalConfig } from "../core/config.js";
 import { doctor } from "../core/doctor.js";
@@ -89,6 +90,22 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
   program.command("dashboard").action(async () => {
     await buildDashboard(cwd);
   });
+
+  program
+    .command("query")
+    .option("--json", "print machine-readable JSON", true)
+    .option("--slug <slug>", "filter by goal slug")
+    .option("--status <status>", "filter by derived goal status")
+    .action(async (options: { json: boolean; slug?: string; status?: string }) => {
+      const queryOptions: { slug?: string; status?: GoalStatus } = {};
+      if (options.slug) queryOptions.slug = options.slug;
+      if (options.status) {
+        if (!isGoalStatus(options.status)) throw new Error(`invalid status: ${options.status}`);
+        queryOptions.status = options.status;
+      }
+      const result = await queryLedger(cwd, queryOptions);
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    });
 
   program.command("publish-check").argument("<path>").action(async (input: string) => {
     const inputPath = resolveWorkspacePath(cwd, input);

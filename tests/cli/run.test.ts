@@ -47,6 +47,34 @@ describe("cli", () => {
     expect(await runCli(["status", "missing-goal"], tmp)).toBe(1);
   });
 
+  it("prints machine-readable query JSON for agents", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+
+    expect(await runCli(["init"], tmp)).toBe(0);
+    expect(await runCli(["start", "ship-cli", "Ship CLI", "--acceptance", "tests pass"], tmp)).toBe(0);
+    expect(await runCli(["stop", "ship-cli", "--status", "blocked"], tmp)).toBe(0);
+    expect(await runCli(["start", "docs-cli", "Docs CLI", "--acceptance", "docs updated"], tmp)).toBe(0);
+
+    const all = await captureStdio(() => runCli(["query", "--json"], tmp));
+    expect(all.exitCode).toBe(0);
+    expect(all.stderr).toBe("");
+    const parsed = JSON.parse(all.stdout);
+    expect(parsed.goals.map((goal: { slug: string }) => goal.slug)).toEqual(["ship-cli", "docs-cli"]);
+    expect(parsed.goals[0]).toMatchObject({
+      slug: "ship-cli",
+      status: "blocked",
+      outcome: "blocked",
+      acceptance: ["tests pass"],
+      verified: { evidence: [], reviews: [] },
+    });
+
+    const bySlug = await captureStdio(() => runCli(["query", "--json", "--slug", "docs-cli"], tmp));
+    expect(JSON.parse(bySlug.stdout).goals.map((goal: { slug: string }) => goal.slug)).toEqual(["docs-cli"]);
+
+    const byStatus = await captureStdio(() => runCli(["query", "--json", "--status", "blocked"], tmp));
+    expect(JSON.parse(byStatus.stdout).goals.map((goal: { slug: string }) => goal.slug)).toEqual(["ship-cli"]);
+  });
+
   it("runs configured verification command through the CLI", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
 
