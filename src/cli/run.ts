@@ -1,11 +1,15 @@
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { Command } from "commander";
 import { buildDashboard } from "../core/dashboard.js";
 import { addReview } from "../core/review.js";
 import { writeDefaultGoalConfig } from "../core/config.js";
 import { doctor } from "../core/doctor.js";
+import { ensureDir, writeJsonFile } from "../core/fs.js";
 import { appendGoalStep, startGoal, stopGoal } from "../core/goals.js";
 import { readGoalStatus } from "../core/status.js";
 import { verifyCommand } from "../core/verify.js";
+import { buildClaudeForOssDossier } from "../oss/dossier.js";
 import type { GoalStatus, ReviewVerdict, ReviewVerdictValue } from "../core/types.js";
 
 const goalStatuses = ["active", "done", "blocked", "reverted", "abandoned"] as const satisfies readonly GoalStatus[];
@@ -83,6 +87,42 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
     await buildDashboard(cwd);
   });
 
+
+  const oss = program.command("oss");
+
+  oss
+    .command("audit")
+    .requiredOption("--subject <name>")
+    .action(async (options: OssAuditCliOptions) => {
+      await writeJsonFile(path.join(ossDir(cwd), "audit.json"), {
+        subject: options.subject,
+        verified: [],
+        unknown: [...defaultOssUnknown],
+        inferred: [],
+        unmet: [],
+        external_submission: false,
+      } satisfies OssAuditFile);
+    });
+
+  oss
+    .command("dossier")
+    .requiredOption("--subject <name>")
+    .option("--verified <item>", "verified fact", collectListOption, [] as string[])
+    .option("--unknown <item>", "unknown or missing criterion", collectListOption, [] as string[])
+    .option("--inferred <item>", "inference, preferably prefixed with [INFERENCE]", collectListOption, [] as string[])
+    .option("--unmet <item>", "unmet criterion", collectListOption, [] as string[])
+    .action(async (options: OssDossierCliOptions) => {
+      const markdown = buildClaudeForOssDossier({
+        subject: options.subject,
+        verified: options.verified,
+        unknown: options.unknown,
+        inferred: options.inferred,
+        unmet: options.unmet,
+      });
+      const dir = ossDir(cwd);
+      await ensureDir(dir);
+      await writeFile(path.join(dir, "claude-for-oss-dossier.md"), markdown, "utf8");
+    });
   try {
     await program.parseAsync(argv, { from: "user" });
     return exitCode;
@@ -101,4 +141,40 @@ function isReviewVerdict(value: string): value is ReviewVerdictValue {
 
 function isReviewer(value: string): value is ReviewVerdict["reviewer"] {
   return reviewers.includes(value as ReviewVerdict["reviewer"]);
+}
+
+const defaultOssUnknown = [
+  "GitHub stars unknown",
+  "registry downloads unknown",
+  "dependent count unknown",
+  "external merged PR count unknown",
+] as const;
+
+interface OssAuditCliOptions {
+  subject: string;
+}
+
+interface OssDossierCliOptions {
+  subject: string;
+  verified: string[];
+  unknown: string[];
+  inferred: string[];
+  unmet: string[];
+}
+
+interface OssAuditFile {
+  subject: string;
+  verified: string[];
+  unknown: string[];
+  inferred: string[];
+  unmet: string[];
+  external_submission: false;
+}
+
+function collectListOption(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+function ossDir(root: string): string {
+  return path.join(root, ".goal", "oss");
 }

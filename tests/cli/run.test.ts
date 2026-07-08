@@ -188,6 +188,65 @@ redaction:
       done_gate: { ok: true, reasons: [] },
     });
   });
+
+  it("writes an OSS audit stub locally without external submission", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+
+    expect(await runCli(["oss", "audit", "--subject", "Leka212"], tmp)).toBe(0);
+
+    const audit = JSON.parse(await readFile(path.join(tmp, ".goal", "oss", "audit.json"), "utf8")) as {
+      subject: string;
+      verified: string[];
+      unknown: string[];
+      inferred: string[];
+      unmet: string[];
+      external_submission: boolean;
+    };
+    expect(audit).toEqual({
+      subject: "Leka212",
+      verified: [],
+      unknown: [
+        "GitHub stars unknown",
+        "registry downloads unknown",
+        "dependent count unknown",
+        "external merged PR count unknown",
+      ],
+      inferred: [],
+      unmet: [],
+      external_submission: false,
+    });
+  });
+
+  it("writes an OSS dossier locally from explicit CLI facts", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+
+    expect(
+      await runCli(
+        [
+          "oss",
+          "dossier",
+          "--subject",
+          "Leka212",
+          "--verified",
+          "GitHub profile observed",
+          "--unknown",
+          "registry downloads unknown",
+          "--inferred",
+          "[INFERENCE] no public registry package found locally",
+          "--unmet",
+          "No verified external merged PR count",
+        ],
+        tmp,
+      ),
+    ).toBe(0);
+
+    const markdown = await readFile(path.join(tmp, ".goal", "oss", "claude-for-oss-dossier.md"), "utf8");
+    expect(markdown).toContain("## Verified facts\n\n- GitHub profile observed");
+    expect(markdown).toContain("## Unknown or missing\n\n- registry downloads unknown");
+    expect(markdown).toContain("## Inferences\n\n- [INFERENCE] no public registry package found locally");
+    expect(markdown).toContain("## Unmet criteria\n\n- No verified external merged PR count");
+    expect(markdown).toContain("No fake stars, downloads, dependents, PRs, maintainer rights, or affiliations are claimed.");
+  });
 });
 
 async function writeDoneGatedConfig(root: string, commandId: string, script: string): Promise<void> {
