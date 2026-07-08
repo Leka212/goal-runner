@@ -6,8 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import YAML from "yaml";
 import { writeDefaultGoalConfig } from "../../src/core/config.js";
 import { addReview } from "../../src/core/review.js";
-import { canStopDone } from "../../src/core/gates.js";
+import { canStopDone, evaluateStageGate } from "../../src/core/gates.js";
 import { startGoal, stopGoal } from "../../src/core/goals.js";
+import { recordProjectRulesSnapshot } from "../../src/core/project-rules.js";
 import { verifyCommand } from "../../src/core/verify.js";
 
 let tmp: string | undefined;
@@ -92,6 +93,61 @@ describe("gates", () => {
       verdict: "GO",
       artifact_sha256: preflight.artifact_sha256,
     });
+  });
+
+  it("fails publish gates closed when local project rules have no snapshot", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    await writeFile(path.join(tmp, "RELEASE.md"), "Release policy\n", "utf8");
+    await startGoal(tmp, "ship", "Ship", ["publish readiness"]);
+    await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Publish review", evidence: "package dry run checked" }], {
+      stage: "publish",
+    });
+
+    const result = await evaluateStageGate(tmp, "ship", "publish");
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toEqual(["missing project-rule snapshot for 1 local project rule file(s): RELEASE.md"]);
+  });
+
+  it("passes publish and release gates after project rules snapshot and admissible configured reviews", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    await writeFile(path.join(tmp, "AGENTS.md"), "Agent rules\n", "utf8");
+    await startGoal(tmp, "ship", "Ship", ["publish readiness"]);
+    await recordProjectRulesSnapshot(tmp, { goalSlug: "ship" });
+
+    const publishBlocked = await evaluateStageGate(tmp, "ship", "publish");
+    expect(publishBlocked.ok).toBe(false);
+    expect(publishBlocked.reasons).toEqual(["missing admissible publish review verdict"]);
+
+    await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Publish review", evidence: "package dry run checked" }], {
+      stage: "publish",
+    });
+    await addReview(tmp, "ship", "GO-WITH-RISKS", "adapter", [{ severity: "minor", title: "Release review", evidence: "tag plan reviewed" }], {
+      stage: "release",
+    });
+
+    await expect(evaluateStageGate(tmp, "ship", "publish")).resolves.toEqual({ ok: true, reasons: [] });
+    await expect(evaluateStageGate(tmp, "ship", "release")).resolves.toEqual({ ok: true, reasons: [] });
+  });
+
+  it("fails release gates when the project-rule snapshot is stale", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    const releasePolicy = path.join(tmp, "RELEASE_POLICY.md");
+    await writeFile(releasePolicy, "Initial release policy\n", "utf8");
+    await startGoal(tmp, "ship", "Ship", ["release readiness"]);
+    await recordProjectRulesSnapshot(tmp, { goalSlug: "ship" });
+    await writeFile(releasePolicy, "Updated release policy\n", "utf8");
+    await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Release review", evidence: "reviewed before policy changed" }], {
+      stage: "release",
+    });
+
+    const result = await evaluateStageGate(tmp, "ship", "release");
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toEqual(["stale project-rule snapshot: RELEASE_POLICY.md hash changed"]);
   });
 
   it("does not accept hand-written command evidence without ledger provenance", async () => {

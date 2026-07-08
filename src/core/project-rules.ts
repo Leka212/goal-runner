@@ -6,7 +6,7 @@ import type { GoalEvent } from "./types.js";
 
 export const PROJECT_RULES_SLUG = "__project_rules__";
 
-export type ProjectRuleKind = "code_of_conduct" | "contributing" | "security" | "pull_request_template";
+export type ProjectRuleKind = "code_of_conduct" | "contributing" | "security" | "pull_request_template" | "release_policy" | "agent_instructions";
 
 export interface ProjectRuleFile {
   kind: ProjectRuleKind;
@@ -43,6 +43,12 @@ const fixedRules: Array<{ kind: ProjectRuleKind; relativePath: string; priority:
   { kind: "contributing", relativePath: "CONTRIBUTING.md", priority: 1 },
   { kind: "security", relativePath: "SECURITY.md", priority: 2 },
   { kind: "pull_request_template", relativePath: ".github/pull_request_template.md", priority: 4 },
+  { kind: "release_policy", relativePath: "RELEASE.md", priority: 5 },
+  { kind: "release_policy", relativePath: "RELEASE_POLICY.md", priority: 5 },
+  { kind: "release_policy", relativePath: ".github/release.yml", priority: 5 },
+  { kind: "agent_instructions", relativePath: "AGENTS.md", priority: 6 },
+  { kind: "agent_instructions", relativePath: "CLAUDE.md", priority: 6 },
+  { kind: "agent_instructions", relativePath: ".github/copilot-instructions.md", priority: 6 },
 ];
 
 export async function discoverProjectRules(root: string): Promise<ProjectRuleFile[]> {
@@ -59,6 +65,17 @@ export async function discoverProjectRules(root: string): Promise<ProjectRuleFil
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue;
       candidates.push({ kind: "pull_request_template", absolutePath: path.join(templateDir, entry.name), priority: 3 });
+    }
+  } catch (error: unknown) {
+    if (!isNoEntry(error)) throw error;
+  }
+
+  const cursorRulesDir = path.join(root, ".cursor", "rules");
+  try {
+    const entries = await readdir(cursorRulesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".mdc")) continue;
+      candidates.push({ kind: "agent_instructions", absolutePath: path.join(cursorRulesDir, entry.name), priority: 6 });
     }
   } catch (error: unknown) {
     if (!isNoEntry(error)) throw error;
@@ -178,7 +195,14 @@ function isProjectRuleFile(value: unknown): value is ProjectRuleFile {
 }
 
 function isProjectRuleKind(value: unknown): value is ProjectRuleKind {
-  return value === "code_of_conduct" || value === "contributing" || value === "security" || value === "pull_request_template";
+  return (
+    value === "code_of_conduct" ||
+    value === "contributing" ||
+    value === "security" ||
+    value === "pull_request_template" ||
+    value === "release_policy" ||
+    value === "agent_instructions"
+  );
 }
 
 async function isRegularFile(file: string): Promise<boolean> {

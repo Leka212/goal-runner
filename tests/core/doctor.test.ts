@@ -40,19 +40,22 @@ describe("doctor", () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-doctor-"));
     await writeDefaultGoalConfig(tmp);
     await writeFile(path.join(tmp, "SECURITY.md"), "Security policy must be read before release.\\n", "utf8");
+    await writeFile(path.join(tmp, "AGENTS.md"), "Agent instruction must be read before release.\\n", "utf8");
 
     const result = await doctor(tmp);
 
     expect(result.ok).toBe(false);
     expect(result.errors.join("\\n")).toContain("missing project-rule snapshot");
     expect(result.errors.join("\\n")).toContain("SECURITY.md");
+    expect(result.errors.join("\\n")).toContain("AGENTS.md");
     expect(result.errors.join("\\n")).not.toContain("Security policy must be read");
+    expect(result.errors.join("\\n")).not.toContain("Agent instruction must be read");
   });
 
   it("accepts local project rule files after their snapshot is recorded", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-doctor-"));
     await writeDefaultGoalConfig(tmp);
-    await writeFile(path.join(tmp, "CONTRIBUTING.md"), "Contributions require tests.\\n", "utf8");
+    await writeFile(path.join(tmp, "RELEASE.md"), "Release policies require tests.\\n", "utf8");
     await recordProjectRulesSnapshot(tmp);
 
     await expect(doctor(tmp)).resolves.toEqual({ ok: true, errors: [] });

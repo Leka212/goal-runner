@@ -12,6 +12,7 @@ import { appendGoalStep, startGoal, stopGoal } from "../core/goals.js";
 import { readGoalStatus } from "../core/status.js";
 import { detectPublishLeaks } from "../core/redaction.js";
 import { buildStatusReport } from "../core/status-report.js";
+import { evaluateStageGate } from "../core/gates.js";
 import { verifyCommand } from "../core/verify.js";
 import { recordProjectRulesSnapshot } from "../core/project-rules.js";
 import { buildClaudeForOssDossier } from "../oss/dossier.js";
@@ -100,6 +101,19 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
       if (!isReviewer(options.reviewer)) throw new Error(`invalid reviewer: ${options.reviewer}`);
       if (!isReviewStage(options.stage)) throw new Error(`invalid review stage: ${options.stage}`);
       await addReview(cwd, slug, options.verdict, options.reviewer, [], { stage: options.stage });
+    });
+
+  program
+    .command("gate")
+    .argument("<slug>")
+    .requiredOption("--stage <stage>", "gate stage")
+    .action(async (slug: string, options: { stage: string }) => {
+      if (!isReviewStage(options.stage)) throw new Error(`invalid gate stage: ${options.stage}`);
+      const result = await evaluateStageGate(cwd, slug, options.stage);
+      if (!result.ok) {
+        for (const reason of result.reasons) process.stderr.write(`${reason}\n`);
+        exitCode = 1;
+      }
     });
 
   program.command("dashboard").action(async () => {

@@ -77,6 +77,23 @@ describe("cli", () => {
     expect(JSON.stringify(events.at(-1))).not.toContain("Security handling text");
   });
 
+  it("evaluates publish and release gates from the CLI with project-rule snapshot enforcement", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+    expect(await runCli(["init"], tmp)).toBe(0);
+    await writeFile(path.join(tmp, "RELEASE.md"), "Release process\n", "utf8");
+    expect(await runCli(["start", "ship-cli", "Ship CLI", "--acceptance", "publish gated"], tmp)).toBe(0);
+    expect(await runCli(["review", "ship-cli", "--verdict", "GO", "--reviewer", "human", "--stage", "publish"], tmp)).toBe(0);
+    expect(await runCli(["review", "ship-cli", "--verdict", "GO", "--reviewer", "human", "--stage", "release"], tmp)).toBe(0);
+
+    const blockedGate = await captureStdio(() => runCli(["gate", "ship-cli", "--stage", "publish"], tmp));
+    expect(blockedGate).toMatchObject({ exitCode: 1, stdout: "" });
+    expect(blockedGate.stderr).toContain("missing project-rule snapshot");
+
+    expect(await runCli(["rules", "snapshot"], tmp)).toBe(0);
+    expect(await runCli(["gate", "ship-cli", "--stage", "publish"], tmp)).toBe(0);
+    expect(await runCli(["gate", "ship-cli", "--stage", "release"], tmp)).toBe(0);
+  });
+
   it("prints machine-readable query JSON for agents and applies every query filter", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
 

@@ -31,30 +31,38 @@ describe("queryLedger", () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-query-"));
     await writeDefaultGoalConfig(tmp);
     await writeFile(path.join(tmp, "SECURITY.md"), "Do not publish before security review.\\n", "utf8");
+    await writeFile(path.join(tmp, "RELEASE.md"), "Release policy detail stays local.\\n", "utf8");
+    await writeFile(path.join(tmp, "AGENTS.md"), "Agent instruction detail stays local.\\n", "utf8");
 
     const missing = await queryLedger(tmp);
 
     expect(missing.goals).toEqual([]);
     expect(missing.project_rules).toMatchObject({
-      discovered_count: 1,
+      discovered_count: 3,
       satisfied: false,
       snapshot: null,
       missing_snapshot: true,
       stale: false,
     });
     expect(JSON.stringify(missing.project_rules)).toContain("SECURITY.md");
+    expect(JSON.stringify(missing.project_rules)).toContain("RELEASE.md");
+    expect(JSON.stringify(missing.project_rules)).toContain("AGENTS.md");
     expect(JSON.stringify(missing.project_rules)).not.toContain("Do not publish");
 
     await recordProjectRulesSnapshot(tmp);
     const satisfied = await queryLedger(tmp);
 
     expect(satisfied.project_rules).toMatchObject({
-      discovered_count: 1,
+      discovered_count: 3,
       satisfied: true,
       missing_snapshot: false,
       stale: false,
       snapshot: {
-        files: [{ kind: "security", path: "SECURITY.md", sha256: expect.any(String) }],
+        files: expect.arrayContaining([
+          { kind: "security", path: "SECURITY.md", sha256: expect.any(String) },
+          { kind: "release_policy", path: "RELEASE.md", sha256: expect.any(String) },
+          { kind: "agent_instructions", path: "AGENTS.md", sha256: expect.any(String) },
+        ]),
       },
     });
   });

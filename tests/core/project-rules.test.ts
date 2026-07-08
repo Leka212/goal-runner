@@ -35,6 +35,32 @@ describe("project rules", () => {
     expect(JSON.stringify(rules)).not.toContain("Do not print me");
   });
 
+  it("detects release policies and local agent instructions without snapshotting contents", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-project-rules-"));
+    await mkdir(path.join(tmp, ".github"), { recursive: true });
+    await mkdir(path.join(tmp, ".cursor", "rules"), { recursive: true });
+    await writeFile(path.join(tmp, "RELEASE.md"), "Release checklist\nsecret release note\n", "utf8");
+    await writeFile(path.join(tmp, "RELEASE_POLICY.md"), "Release policy\n", "utf8");
+    await writeFile(path.join(tmp, ".github", "release.yml"), "release: policy\n", "utf8");
+    await writeFile(path.join(tmp, "AGENTS.md"), "Agent instructions\n", "utf8");
+    await writeFile(path.join(tmp, "CLAUDE.md"), "Claude instructions\n", "utf8");
+    await writeFile(path.join(tmp, ".github", "copilot-instructions.md"), "Copilot instructions\n", "utf8");
+    await writeFile(path.join(tmp, ".cursor", "rules", "team.mdc"), "Cursor rules\n", "utf8");
+
+    const rules = await discoverProjectRules(tmp);
+
+    expect(rules).toEqual([
+      { kind: "release_policy", path: ".github/release.yml", sha256: sha256("release: policy\n") },
+      { kind: "release_policy", path: "RELEASE_POLICY.md", sha256: sha256("Release policy\n") },
+      { kind: "release_policy", path: "RELEASE.md", sha256: sha256("Release checklist\nsecret release note\n") },
+      { kind: "agent_instructions", path: ".cursor/rules/team.mdc", sha256: sha256("Cursor rules\n") },
+      { kind: "agent_instructions", path: ".github/copilot-instructions.md", sha256: sha256("Copilot instructions\n") },
+      { kind: "agent_instructions", path: "AGENTS.md", sha256: sha256("Agent instructions\n") },
+      { kind: "agent_instructions", path: "CLAUDE.md", sha256: sha256("Claude instructions\n") },
+    ]);
+    expect(JSON.stringify(rules)).not.toContain("secret release note");
+  });
+
   it("records a project-rule snapshot ledger event without file contents", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-project-rules-"));
     await writeFile(path.join(tmp, "CONTRIBUTING.md"), "Keep changes reviewed.\n", "utf8");

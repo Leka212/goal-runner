@@ -4,12 +4,15 @@ import { loadGoalConfig } from "./config.js";
 import { listVerifiedEvidence } from "./evidence.js";
 import { readJsonFile } from "./fs.js";
 import { listVerifiedReviews } from "./review.js";
+import { projectRuleDoctorErrors, readProjectRulesState } from "./project-rules.js";
 import type { DoneGateProvenance, EvidenceRecord, ReviewStage, ReviewVerdict } from "./types.js";
 
-export interface DoneGateResult {
+export interface StageGateResult {
   ok: boolean;
   reasons: string[];
 }
+
+export interface DoneGateResult extends StageGateResult {}
 
 export interface DoneGateEvaluation extends DoneGateResult {
   provenance?: DoneGateProvenance;
@@ -18,6 +21,30 @@ export interface DoneGateEvaluation extends DoneGateResult {
 export async function canStopDone(root: string, slug: string): Promise<DoneGateResult> {
   const { ok, reasons } = await evaluateDoneGate(root, slug);
   return { ok, reasons };
+}
+
+export async function evaluateStageGate(root: string, slug: string, stage: ReviewStage): Promise<StageGateResult> {
+  if (stage === "done") {
+    const { ok, reasons } = await evaluateDoneGate(root, slug);
+    return { ok, reasons };
+  }
+
+  const config = await loadGoalConfig(root);
+  const reasons: string[] = [];
+
+  if (stage === "publish" || stage === "release") {
+    const projectRules = await readProjectRulesState(root);
+    reasons.push(...projectRuleDoctorErrors(projectRules));
+  }
+
+  if (config.gates.require_review_for.includes(stage)) {
+    const allowed = new Set(config.gates.review_verdicts.allowed);
+    const reviews = await listVerifiedReviews(root, slug);
+    const found = reviews.find((review) => review.stage === stage && allowed.has(review.verdict));
+    if (!found) reasons.push(missingReviewReason(stage));
+  }
+
+  return { ok: reasons.length === 0, reasons };
 }
 
 export async function evaluateDoneGate(root: string, slug: string): Promise<DoneGateEvaluation> {
