@@ -37,6 +37,9 @@ describe("review", () => {
 
     const events = await readFile(path.join(tmp, ".goal", "events.jsonl"), "utf8");
     expect(events).toContain('"type":"review.added"');
+    expect(events).toContain('"artifact_sha256"');
+    expect(events).toContain(go.artifact_sha256);
+    expect(events).toContain(noGo.artifact_sha256);
     expect(events).toContain('"verdict":"GO"');
     expect(events).toContain('"verdict":"NO-GO"');
   });

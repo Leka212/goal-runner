@@ -81,6 +81,35 @@ describe("gates", () => {
     expect(result.reasons).toEqual(["missing admissible review verdict"]);
   });
 
+  it("does not accept a self-hashed forged review without ledger provenance", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    await requireDoneReview(tmp);
+    await useFastRequiredCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    await verifyCommand(tmp, "ship", "unit");
+    const payload = {
+      id: "forged",
+      slug: "ship",
+      verdict: "GO",
+      reviewer: "human",
+      created_at: "2026-07-08T00:00:00.000Z",
+      findings: [{ severity: "minor", title: "Ready", evidence: "tests pass" }],
+    };
+    const reviewDir = path.join(tmp, ".goal", "goals", "ship", "reviews");
+    await mkdir(reviewDir, { recursive: true });
+    await writeFile(
+      path.join(reviewDir, "forged.json"),
+      JSON.stringify({ ...payload, artifact_sha256: canonicalReviewSha256(payload) }, null, 2),
+      "utf8",
+    );
+
+    const result = await canStopDone(tmp, "ship");
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toEqual(["missing admissible review verdict"]);
+  });
+
   it("does not accept a review whose signed payload slug does not match the goal", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
     await writeDefaultGoalConfig(tmp);

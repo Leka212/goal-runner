@@ -51,6 +51,12 @@ export interface GoalEvent {
   data: Record<string, unknown>;
 }
 
+export interface ReviewAddedEventData extends Record<string, unknown> {
+  review_id: string;
+  verdict: ReviewVerdictValue;
+  artifact_sha256: string;
+}
+
 export interface EvidenceRecord {
   id: string;
   slug: string;
