@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goal-protocol.local/schemas/goal-config.schema.json",
+  "type": "object",
+  "required": ["project", "limits", "permissions", "verification", "gates", "redaction"],
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "type": "object",
+      "required": ["name", "public_safe"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "repo": { "type": "string", "minLength": 1 },
+        "public_safe": { "type": "boolean" }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "required": [
+        "max_iterations",
+        "max_minutes",
+        "max_workers",
+        "max_review_rounds",
+        "stale_no_output_seconds",
+        "require_explicit_next_decision",
+        "kill_switch_file"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "max_iterations": { "type": "integer", "minimum": 1 },
+        "max_minutes": { "type": "integer", "minimum": 1 },
+        "max_workers": { "type": "integer", "minimum": 1 },
+        "max_review_rounds": { "type": "integer", "minimum": 0 },
+        "stale_no_output_seconds": { "type": "integer", "minimum": 1 },
+        "require_explicit_next_decision": { "type": "boolean" },
+        "kill_switch_file": { "type": "string", "minLength": 1 }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "required": ["default_tier", "tiers", "fork_pr_safe_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "default_tier": { "enum": ["read", "suggest", "comment", "branch", "release", "admin"] },
+        "tiers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "enum": ["read", "suggest", "comment", "branch", "release", "admin"] }
+        },
+        "fork_pr_safe_mode": { "type": "boolean" }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "required": ["commands"],
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "argv", "timeout_seconds", "required_for_done", "redact", "output_byte_cap"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "argv": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "timeout_seconds": { "type": "integer", "minimum": 1 },
+              "required_for_done": { "type": "boolean" },
+              "redact": { "type": "boolean" },
+              "output_byte_cap": { "type": "integer", "minimum": 100 }
+            }
+          }
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "required": ["require_review_for", "review_verdicts"],
+      "additionalProperties": false,
+      "properties": {
+        "require_review_for": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "review_verdicts": {
+          "type": "object",
+          "required": ["allowed"],
+          "additionalProperties": false,
+          "properties": {
+            "allowed": {
+              "type": "array",
+              "items": { "enum": ["GO", "NO-GO", "GO-WITH-RISKS"] }
+            }
+          }
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "required": ["deny_env_patterns", "deny_path_patterns", "deny_output_patterns"],
+      "additionalProperties": false,
+      "properties": {
+        "deny_env_patterns": { "type": "array", "items": { "type": "string" } },
+        "deny_path_patterns": { "type": "array", "items": { "type": "string" } },
+        "deny_output_patterns": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "oss": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "github_owner": { "type": "string", "minLength": 1 },
+        "github_repo": { "type": "string", "minLength": 1 },
+        "registries": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "package_names": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

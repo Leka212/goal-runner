@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goal-protocol.local/schemas/review-verdict.schema.json",
+  "type": "object",
+  "required": ["id", "slug", "verdict", "reviewer", "created_at", "findings", "artifact_sha256"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "slug": { "type": "string", "minLength": 1 },
+    "verdict": { "enum": ["GO", "NO-GO", "GO-WITH-RISKS"] },
+    "reviewer": { "enum": ["human", "adapter", "command"] },
+    "created_at": { "type": "string", "minLength": 1 },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "title", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "severity": { "enum": ["critical", "important", "minor"] },
+          "title": { "type": "string", "minLength": 1 },
+          "evidence": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "artifact_sha256": { "type": "string", "minLength": 1 }
+  }
+}

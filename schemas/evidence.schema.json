@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goal-protocol.local/schemas/evidence.schema.json",
+  "type": "object",
+  "required": ["id", "slug", "kind", "created_at", "artifact_paths", "redaction_applied"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "slug": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["command", "file", "url", "screenshot", "artifact", "manual-attestation"] },
+    "created_at": { "type": "string", "minLength": 1 },
+    "command": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "exit_code": { "type": "integer" },
+    "stdout_redacted_path": { "type": "string", "minLength": 1 },
+    "stderr_redacted_path": { "type": "string", "minLength": 1 },
+    "artifact_paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "sha256": { "type": "string", "minLength": 1 },
+    "redaction_applied": { "type": "boolean" }
+  }
+}

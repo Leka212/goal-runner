@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goal-protocol.local/schemas/goal-event.schema.json",
+  "type": "object",
+  "required": ["id", "type", "slug", "created_at", "data"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "type": {
+      "enum": [
+        "goal.started",
+        "goal.step",
+        "goal.stopped",
+        "evidence.added",
+        "review.added",
+        "gate.added",
+        "decision.recorded"
+      ]
+    },
+    "slug": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "data": { "type": "object" }
+  }
+}
