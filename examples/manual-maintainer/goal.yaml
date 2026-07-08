@@ -1,0 +1,39 @@
+project:
+  name: synthetic-maintainer-project
+  repo: https://github.com/example/synthetic-maintainer-project
+  public_safe: true
+limits:
+  max_iterations: 8
+  max_minutes: 45
+  max_workers: 4
+  max_review_rounds: 3
+  stale_no_output_seconds: 900
+  require_explicit_next_decision: true
+  kill_switch_file: .goal/KILL
+permissions:
+  default_tier: read
+  tiers: [read, suggest, comment, branch, release, admin]
+  fork_pr_safe_mode: true
+verification:
+  commands:
+    - id: unit
+      argv: [npm, test]
+      timeout_seconds: 120
+      required_for_done: true
+      redact: true
+      output_byte_cap: 20000
+gates:
+  require_review_for: [publish, release, secrets, prod]
+  review_verdicts:
+    allowed: [GO, GO-WITH-RISKS]
+redaction:
+  deny_env_patterns: [ACCESS_TOKEN_NAME, SESSION_COOKIE_NAME, PRIVATE_KEY_NAME, PASSWORD_NAME]
+  deny_path_patterns: [credential-store, private-key-file, local-secret-file]
+  deny_output_patterns:
+    - "(?i)api[_-]?key\\s*[:=]\\s*\\S+"
+    - "(?i)bearer\\s+[a-z0-9._-]+"
+oss:
+  github_owner: example
+  github_repo: synthetic-maintainer-project
+  registries: [npm]
+  package_names: []

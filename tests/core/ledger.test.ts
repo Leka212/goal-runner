@@ -87,12 +87,12 @@ describe("ledger", () => {
 });
 
 describe("goal lifecycle", () => {
-  it("records start, step, and stop events without enforcing the done gate yet", async () => {
+  it("records start, step, and non-done stop events", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-lifecycle-"));
 
     await startGoal(tmp, "ship-cli", "Ship CLI", ["init works", "tests pass"]);
     await recordStep(tmp, "ship-cli", "Created tests", "test output");
-    await expect(stopGoal(tmp, "ship-cli", "done")).resolves.toBeUndefined();
+    await expect(stopGoal(tmp, "ship-cli", "blocked")).resolves.toBeUndefined();
 
     const events = await readEvents(tmp);
     expect(events.map((event) => [event.sequence, event.type, event.slug])).toEqual([
@@ -103,12 +103,12 @@ describe("goal lifecycle", () => {
     expect(events.map((event) => event.data)).toEqual([
       { title: "Ship CLI", acceptance: ["init works", "tests pass"] },
       { summary: "Created tests", evidence_expected: "test output" },
-      { status: "done" },
+      { status: "blocked" },
     ]);
 
     const human = await readFile(path.join(tmp, "GOALS.md"), "utf8");
     expect(human).toContain("Ship CLI");
     expect(human).toContain("Created tests");
-    expect(human).toContain("Stop: ship-cli -> done");
+    expect(human).toContain("Stop: ship-cli -> blocked");
   });
 });
