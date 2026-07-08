@@ -57,6 +57,14 @@ export interface ReviewAddedEventData extends Record<string, unknown> {
   artifact_sha256: string;
 }
 
+export interface EvidenceAddedEventData extends Record<string, unknown> {
+  evidence_id: string;
+  kind: EvidenceKind;
+  exit_code?: number;
+  sha256?: string;
+  artifact_paths: string[];
+}
+
 export interface EvidenceRecord {
   id: string;
   slug: string;

@@ -109,6 +109,31 @@ describe("verify", () => {
     expect(stderr).not.toContain("secret");
   });
 
+  it("redacts persisted stdout and stderr even when command redaction is disabled", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-verify-"));
+    await writeDefaultGoalConfig(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    await writeGoalConfig(tmp, [
+      `    - id: disabled-redaction`,
+      `      argv: [${JSON.stringify(process.execPath)}, -e, ${JSON.stringify("console.log('api_key=secret'); console.error('api_key=secret'); process.exit(0)")}]`,
+      `      timeout_seconds: 5`,
+      `      required_for_done: true`,
+      `      redact: false`,
+      `      output_byte_cap: 20000`,
+    ]);
+
+    const evidence = await verifyCommand(tmp, "ship", "disabled-redaction");
+
+    expect(evidence.exit_code).toBe(0);
+    expect(evidence.redaction_applied).toBe(true);
+    const stdout = await readFile(evidence.stdout_redacted_path!, "utf8");
+    const stderr = await readFile(evidence.stderr_redacted_path!, "utf8");
+    expect(stdout).toContain("[REDACTED]");
+    expect(stderr).toContain("[REDACTED]");
+    expect(stdout).not.toContain("secret");
+    expect(stderr).not.toContain("secret");
+  });
+
   it("passes argv entries literally instead of evaluating shell metacharacters", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-verify-"));
     await writeDefaultGoalConfig(tmp);

@@ -49,6 +49,69 @@ describe("gates", () => {
     expect(goal.status).toBe("done");
   });
 
+  it("does not accept hand-written command evidence without ledger provenance", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    await useFastRequiredCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    const evidenceDir = path.join(tmp, ".goal", "goals", "ship", "evidence");
+    await mkdir(evidenceDir, { recursive: true });
+    await writeFile(
+      path.join(evidenceDir, "forged.json"),
+      JSON.stringify(
+        {
+          id: "forged",
+          slug: "ship",
+          kind: "command",
+          created_at: "2026-07-08T00:00:00.000Z",
+          command: [process.execPath, "-e", "process.exit(0)"],
+          exit_code: 0,
+          artifact_paths: [],
+          redaction_applied: true,
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const result = await canStopDone(tmp, "ship");
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toEqual(["missing required evidence for command unit"]);
+  });
+
+  it("does not accept command evidence whose persisted sha no longer matches provenance", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    await useFastRequiredCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    const evidence = await verifyCommand(tmp, "ship", "unit");
+    await expect(canStopDone(tmp, "ship")).resolves.toEqual({ ok: true, reasons: [] });
+    const evidenceFile = path.join(tmp, ".goal", "goals", "ship", "evidence", `${evidence.id}.json`);
+    await writeFile(evidenceFile, JSON.stringify({ ...evidence, sha256: "forged" }, null, 2), "utf8");
+
+    const result = await canStopDone(tmp, "ship");
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toEqual(["missing required evidence for command unit"]);
+  });
+
+  it("does not accept command evidence whose artifact hash manifest was tampered", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    await useFastRequiredCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    const evidence = await verifyCommand(tmp, "ship", "unit");
+    await expect(canStopDone(tmp, "ship")).resolves.toEqual({ ok: true, reasons: [] });
+    await writeFile(evidence.stdout_redacted_path!, "tampered\n", "utf8");
+
+    const result = await canStopDone(tmp, "ship");
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toEqual(["missing required evidence for command unit"]);
+  });
+
   it("rejects NO-GO reviews as inadmissible for done", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
     await writeDefaultGoalConfig(tmp);

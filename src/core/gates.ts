@@ -1,8 +1,8 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { loadGoalConfig } from "./config.js";
+import { listVerifiedEvidence } from "./evidence.js";
 import { readJsonFile } from "./fs.js";
-import { goalRunDir } from "./paths.js";
 import { listVerifiedReviews } from "./review.js";
 import type { EvidenceRecord } from "./types.js";
 
@@ -13,8 +13,7 @@ export interface DoneGateResult {
 
 export async function canStopDone(root: string, slug: string): Promise<DoneGateResult> {
   const config = await loadGoalConfig(root);
-  const dir = goalRunDir(root, slug);
-  const evidence = await listJson<EvidenceRecord>(path.join(dir, "evidence"));
+  const evidence = await listVerifiedEvidence(root, slug);
   const reviews = await listVerifiedReviews(root, slug);
   const reasons: string[] = [];
 

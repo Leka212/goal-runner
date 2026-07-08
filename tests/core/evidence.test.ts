@@ -42,6 +42,6 @@ describe("evidence records", () => {
     const events = await readEvents(tmp);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: "evidence.added", slug: "ship" });
-    expect(events[0].data).toMatchObject({ evidence_id: evidence.id, kind: "artifact" });
+    expect(events[0].data).toMatchObject({ evidence_id: evidence.id, kind: "artifact", sha256, artifact_paths: [artifactPath] });
   });
 });

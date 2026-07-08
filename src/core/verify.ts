@@ -55,7 +55,7 @@ export async function verifyCommand(root: string, slug: string, commandId: strin
     stderr_redacted_path: stderrPath,
     artifact_paths: [stdoutPath, stderrPath, manifestPath],
     sha256: await fileSha256(manifestPath),
-    redaction_applied: command.redact,
+    redaction_applied: true,
   });
 }
 
@@ -104,8 +104,8 @@ async function runVerification(root: string, command: VerificationCommand, patte
 
   return {
     exitCode,
-    stdout: command.redact ? redactText(cappedStdout, patterns) : cappedStdout,
-    stderr: command.redact ? redactText(cappedStderr, patterns) : cappedStderr,
+    stdout: redactText(cappedStdout, patterns),
+    stderr: redactText(cappedStderr, patterns),
   };
 }
 
