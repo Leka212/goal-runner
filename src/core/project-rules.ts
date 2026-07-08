@@ -122,13 +122,13 @@ export async function readProjectRulesState(root: string): Promise<ProjectRulesS
     snapshot,
     missing_snapshot: missingSnapshot,
     stale,
-    satisfied: discovered.length === 0 || (snapshot !== null && !stale),
+    satisfied: !missingSnapshot && !stale,
     errors,
   };
 }
 
 export function projectRuleDoctorErrors(state: ProjectRulesState): string[] {
-  if (state.discovered_count === 0) return [];
+  if (state.stale) return state.errors.map((error) => `stale project-rule snapshot: ${error}`);
   if (state.missing_snapshot) {
     return [`missing project-rule snapshot for ${state.discovered_count} local project rule file(s): ${state.discovered.map((rule) => rule.path).join(", ")}`];
   }

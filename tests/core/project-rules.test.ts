@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { readEvents } from "../../src/core/ledger.js";
-import { discoverProjectRules, recordProjectRulesSnapshot } from "../../src/core/project-rules.js";
+import { discoverProjectRules, projectRuleDoctorErrors, readProjectRulesState, recordProjectRulesSnapshot } from "../../src/core/project-rules.js";
 
 let tmp: string | undefined;
 
@@ -77,6 +77,22 @@ describe("project rules", () => {
       },
     });
     expect(JSON.stringify(event)).not.toContain("Keep changes reviewed");
+  });
+  it("reports stale snapshots when every snapshotted rule file is removed", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-project-rules-"));
+    const contributingPath = path.join(tmp, "CONTRIBUTING.md");
+    await writeFile(contributingPath, "Keep changes reviewed.\n", "utf8");
+    await recordProjectRulesSnapshot(tmp);
+    await rm(contributingPath);
+
+    const state = await readProjectRulesState(tmp);
+
+    expect(state.discovered_count).toBe(0);
+    expect(state.stale).toBe(true);
+    expect(state.satisfied).toBe(false);
+    expect(projectRuleDoctorErrors(state)).toEqual([
+      "stale project-rule snapshot: snapshot includes 1 project rule file(s), but no local project rule files are currently detected",
+    ]);
   });
 });
 
