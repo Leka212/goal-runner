@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -30,7 +31,9 @@ describe("review", () => {
     expect(reviewFiles).toHaveLength(2);
 
     const persisted = JSON.parse(await readFile(path.join(reviewDir, `${go.id}.json`), "utf8"));
+    const { artifact_sha256: _discarded, ...goPayload } = persisted;
     expect(persisted).toMatchObject({ id: go.id, slug: "ship", verdict: "GO", reviewer: "human", artifact_sha256: go.artifact_sha256 });
+    expect(go.artifact_sha256).toBe(canonicalReviewSha256(goPayload));
 
     const events = await readFile(path.join(tmp, ".goal", "events.jsonl"), "utf8");
     expect(events).toContain('"type":"review.added"');
@@ -38,3 +41,18 @@ describe("review", () => {
     expect(events).toContain('"verdict":"NO-GO"');
   });
 });
+
+function canonicalReviewSha256(value: unknown): string {
+  return createHash("sha256").update(canonicalJson(value)).digest("hex");
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}

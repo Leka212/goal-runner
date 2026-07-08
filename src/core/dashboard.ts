@@ -5,6 +5,7 @@ import { goalRunDir, resolveGoalPaths } from "./paths.js";
 import { readJsonFile, writeJsonFile } from "./fs.js";
 import type { EvidenceRecord, GoalEvent, GoalStatus, ReviewVerdict } from "./types.js";
 import { canStopDone } from "./gates.js";
+import { listVerifiedReviews } from "./review.js";
 
 interface DashboardRequiredEvidence {
   id: string;
@@ -34,7 +35,7 @@ export async function buildDashboard(root: string): Promise<DashboardSnapshot> {
 
   for (const [slug, goalEvents] of Object.entries(eventsBySlug)) {
     const evidence = await listJson<EvidenceRecord>(`${goalRunDir(root, slug)}/evidence`);
-    const reviews = await listJson<ReviewVerdict>(`${goalRunDir(root, slug)}/reviews`);
+    const reviews = await listVerifiedReviews(root, slug);
     const latestReview = latestByCreatedAt(reviews);
     const doneGate = await canStopDone(root, slug);
     const goalState = await readGoalState(root, slug);
@@ -42,7 +43,7 @@ export async function buildDashboard(root: string): Promise<DashboardSnapshot> {
     const reviewRequired = config.gates.require_review_for.includes("done");
 
     goals[slug] = {
-      status: goalState?.status ?? statusFromEvents(goalEvents),
+      status: statusFromEvents(goalEvents),
       title: goalState?.title ?? titleFromEvents(goalEvents),
       last_event: goalEvents[goalEvents.length - 1]?.type ?? "",
       event_count: goalEvents.length,

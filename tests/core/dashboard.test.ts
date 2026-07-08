@@ -8,6 +8,7 @@ import { buildDashboard } from "../../src/core/dashboard.js";
 import { addReview } from "../../src/core/review.js";
 import { startGoal } from "../../src/core/goals.js";
 import { verifyCommand } from "../../src/core/verify.js";
+import { recordEvent } from "../../src/core/ledger.js";
 
 let tmp: string | undefined;
 
@@ -48,6 +49,19 @@ describe("dashboard", () => {
     });
     const persisted = JSON.parse(await readFile(path.join(tmp, ".goal", "dashboard.json"), "utf8"));
     expect(persisted).toEqual(readyDashboard);
+  });
+
+  it("derives status from the append-only ledger when goal.json diverges", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-dashboard-"));
+    await writeDefaultGoalConfig(tmp);
+    await startGoal(tmp, "ship", "Ship", ["reviewed"]);
+    await recordEvent(tmp, { type: "goal.stopped", slug: "ship", data: { status: "blocked" } });
+
+    const dashboard = await buildDashboard(tmp);
+
+    expect(dashboard.goals.ship.status).toBe("blocked");
+    const goalState = JSON.parse(await readFile(path.join(tmp, ".goal", "goals", "ship", "goal.json"), "utf8"));
+    expect(goalState.status).toBe("active");
   });
 });
 

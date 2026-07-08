@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -62,6 +63,69 @@ describe("gates", () => {
     expect(result.ok).toBe(false);
     expect(result.reasons).toEqual(["missing admissible review verdict"]);
   });
+
+  it("does not accept a forged review file with only an allowed verdict", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    await requireDoneReview(tmp);
+    await useFastRequiredCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    await verifyCommand(tmp, "ship", "unit");
+    const reviewDir = path.join(tmp, ".goal", "goals", "ship", "reviews");
+    await mkdir(reviewDir, { recursive: true });
+    await writeFile(path.join(reviewDir, "fake.json"), JSON.stringify({ verdict: "GO" }), "utf8");
+
+    const result = await canStopDone(tmp, "ship");
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toEqual(["missing admissible review verdict"]);
+  });
+
+  it("does not accept a review whose signed payload slug does not match the goal", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    await requireDoneReview(tmp);
+    await useFastRequiredCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    await verifyCommand(tmp, "ship", "unit");
+    const payload = {
+      id: "foreign",
+      slug: "other",
+      verdict: "GO",
+      reviewer: "human",
+      created_at: "2026-07-08T00:00:00.000Z",
+      findings: [{ severity: "minor", title: "Ready", evidence: "tests pass" }],
+    };
+    const reviewDir = path.join(tmp, ".goal", "goals", "ship", "reviews");
+    await mkdir(reviewDir, { recursive: true });
+    await writeFile(
+      path.join(reviewDir, "foreign.json"),
+      JSON.stringify({ ...payload, artifact_sha256: canonicalReviewSha256(payload) }, null, 2),
+      "utf8",
+    );
+
+    const result = await canStopDone(tmp, "ship");
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toEqual(["missing admissible review verdict"]);
+  });
+
+  it("does not accept a review whose persisted payload was tampered after hashing", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    await requireDoneReview(tmp);
+    await useFastRequiredCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    await verifyCommand(tmp, "ship", "unit");
+    const review = await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Ready", evidence: "tests pass" }]);
+    const reviewFile = path.join(tmp, ".goal", "goals", "ship", "reviews", `${review.id}.json`);
+    await writeFile(reviewFile, JSON.stringify({ ...review, created_at: "2099-01-01T00:00:00.000Z" }, null, 2), "utf8");
+
+    const result = await canStopDone(tmp, "ship");
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toEqual(["missing admissible review verdict"]);
+  });
 });
 
 async function requireDoneReview(root: string): Promise<void> {
@@ -80,4 +144,19 @@ async function useFastRequiredCommand(root: string): Promise<void> {
     timeout_seconds: 5,
   };
   await writeFile(configPath, YAML.stringify(config), "utf8");
+}
+
+function canonicalReviewSha256(value: unknown): string {
+  return createHash("sha256").update(canonicalJson(value)).digest("hex");
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }

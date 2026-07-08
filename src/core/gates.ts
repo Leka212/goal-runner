@@ -3,7 +3,8 @@ import path from "node:path";
 import { loadGoalConfig } from "./config.js";
 import { readJsonFile } from "./fs.js";
 import { goalRunDir } from "./paths.js";
-import type { EvidenceRecord, ReviewVerdict } from "./types.js";
+import { listVerifiedReviews } from "./review.js";
+import type { EvidenceRecord } from "./types.js";
 
 export interface DoneGateResult {
   ok: boolean;
@@ -14,7 +15,7 @@ export async function canStopDone(root: string, slug: string): Promise<DoneGateR
   const config = await loadGoalConfig(root);
   const dir = goalRunDir(root, slug);
   const evidence = await listJson<EvidenceRecord>(path.join(dir, "evidence"));
-  const reviews = await listJson<ReviewVerdict>(path.join(dir, "reviews"));
+  const reviews = await listVerifiedReviews(root, slug);
   const reasons: string[] = [];
 
   for (const command of config.verification.commands.filter((item) => item.required_for_done)) {
