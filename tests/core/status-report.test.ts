@@ -8,6 +8,7 @@ import { addReview } from "../../src/core/review.js";
 import { appendGoalStep, startGoal } from "../../src/core/goals.js";
 import { recordEvent } from "../../src/core/ledger.js";
 import { detectPublishLeaks } from "../../src/core/redaction.js";
+import { recordProjectRulesSnapshot } from "../../src/core/project-rules.js";
 import { buildStatusReport } from "../../src/core/status-report.js";
 import { verifyCommand } from "../../src/core/verify.js";
 
@@ -77,6 +78,28 @@ describe("status report", () => {
     expect(unmet).toContain("bad-done: invalid done claim — missing gate provenance");
     expect(unmet).not.toContain("ready-status: missing required evidence");
     expect(unmet).not.toContain("[INFERENCE]");
+  });
+
+  it("reports missing and satisfied project-rule snapshots without file contents", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-status-report-"));
+    await writeDefaultGoalConfig(tmp);
+    await startGoal(tmp, "rules", "Rules evidence", ["project rules snapshotted"]);
+    await writeFile(path.join(tmp, "SECURITY.md"), "Private security handling text should not appear.\\n", "utf8");
+
+    const missing = await buildStatusReport(tmp);
+
+    expect(section(missing, "Project rules")).toContain("missing project-rule snapshot");
+    expect(section(missing, "Project rules")).toContain("SECURITY.md");
+    expect(missing).not.toContain("Private security handling text");
+
+    await recordProjectRulesSnapshot(tmp);
+    const satisfied = await buildStatusReport(tmp);
+
+    expect(section(satisfied, "Project rules")).toContain("snapshot recorded");
+    expect(section(satisfied, "Project rules")).toContain("SECURITY.md");
+    expect(section(satisfied, "Project rules")).toContain("security");
+    expect(section(satisfied, "Project rules")).toContain("sha256");
+    expect(satisfied).not.toContain("Private security handling text");
   });
 
   it("is deterministic and clean under publish leak detection for synthetic safe data", async () => {

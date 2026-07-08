@@ -13,11 +13,12 @@ import { readGoalStatus } from "../core/status.js";
 import { detectPublishLeaks } from "../core/redaction.js";
 import { buildStatusReport } from "../core/status-report.js";
 import { verifyCommand } from "../core/verify.js";
+import { recordProjectRulesSnapshot } from "../core/project-rules.js";
 import { buildClaudeForOssDossier } from "../oss/dossier.js";
 import { validateBySchema } from "../core/schemas.js";
 import type { EvidenceKind, GoalEventType, GoalStatus, OssAudit, ReviewStage, ReviewVerdict, ReviewVerdictValue } from "../core/types.js";
 
-const goalEventTypes = ["goal.started", "goal.step", "goal.stopped", "evidence.added", "review.added", "gate.added", "decision.recorded"] as const satisfies readonly GoalEventType[];
+const goalEventTypes = ["goal.started", "goal.step", "goal.stopped", "evidence.added", "review.added", "gate.added", "decision.recorded", "project_rules.snapshot"] as const satisfies readonly GoalEventType[];
 const evidenceKinds = ["command", "file", "url", "screenshot", "artifact", "manual-attestation"] as const satisfies readonly EvidenceKind[];
 const goalStatuses = ["active", "done", "blocked", "reverted", "abandoned"] as const satisfies readonly GoalStatus[];
 const reviewVerdicts = ["GO", "NO-GO", "GO-WITH-RISKS"] as const satisfies readonly ReviewVerdictValue[];
@@ -40,8 +41,10 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
     .argument("<slug>")
     .argument("<title>")
     .option("--acceptance <item>", "acceptance criterion", (value, previous: string[]) => [...previous, value], [] as string[])
-    .action(async (slug: string, title: string, options: { acceptance: string[] }) => {
+    .option("--rules-snapshot", "record a local project-rule snapshot for this goal")
+    .action(async (slug: string, title: string, options: { acceptance: string[]; rulesSnapshot?: boolean }) => {
       await startGoal(cwd, slug, title, options.acceptance.length > 0 ? options.acceptance : ["goal has evidence"]);
+      if (options.rulesSnapshot) await recordProjectRulesSnapshot(cwd, { goalSlug: slug });
     });
 
   program
@@ -69,6 +72,12 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
   program.command("doctor").action(async () => {
     const result = await doctor(cwd);
     if (!result.ok) throw new Error(result.errors.join("; "));
+  });
+
+  const rules = program.command("rules");
+
+  rules.command("snapshot").action(async () => {
+    await recordProjectRulesSnapshot(cwd);
   });
 
   program

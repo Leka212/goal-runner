@@ -3,6 +3,7 @@ import path from "node:path";
 import { loadGoalConfig } from "./config.js";
 import { readEvents } from "./ledger.js";
 import { auditDoneClaims } from "./done-claims.js";
+import { projectRuleDoctorErrors, readProjectRulesState } from "./project-rules.js";
 
 export interface DoctorResult {
   ok: boolean;
@@ -43,5 +44,13 @@ export async function doctor(root: string): Promise<DoctorResult> {
     errors.push(`invalid done-claim audit: ${message}`);
   }
 
+
+  try {
+    const projectRules = await readProjectRulesState(root);
+    errors.push(...projectRuleDoctorErrors(projectRules));
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    errors.push(`invalid project-rule audit: ${message}`);
+  }
   return { ok: errors.length === 0, errors };
 }

@@ -8,6 +8,7 @@ import { doctor } from "../../src/core/doctor.js";
 import { startGoal, stopGoal } from "../../src/core/goals.js";
 import { recordEvent } from "../../src/core/ledger.js";
 import { addReview } from "../../src/core/review.js";
+import { recordProjectRulesSnapshot } from "../../src/core/project-rules.js";
 import { verifyCommand } from "../../src/core/verify.js";
 
 let tmp: string | undefined;
@@ -33,6 +34,43 @@ describe("doctor", () => {
     await writeDefaultGoalConfig(tmp);
 
     await expect(doctor(tmp)).resolves.toEqual({ ok: true, errors: [] });
+  });
+
+  it("reports local project rule files that have not been snapshotted", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-doctor-"));
+    await writeDefaultGoalConfig(tmp);
+    await writeFile(path.join(tmp, "SECURITY.md"), "Security policy must be read before release.\\n", "utf8");
+
+    const result = await doctor(tmp);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.join("\\n")).toContain("missing project-rule snapshot");
+    expect(result.errors.join("\\n")).toContain("SECURITY.md");
+    expect(result.errors.join("\\n")).not.toContain("Security policy must be read");
+  });
+
+  it("accepts local project rule files after their snapshot is recorded", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-doctor-"));
+    await writeDefaultGoalConfig(tmp);
+    await writeFile(path.join(tmp, "CONTRIBUTING.md"), "Contributions require tests.\\n", "utf8");
+    await recordProjectRulesSnapshot(tmp);
+
+    await expect(doctor(tmp)).resolves.toEqual({ ok: true, errors: [] });
+  });
+
+  it("reports a stale project-rule snapshot when rule files change", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-doctor-"));
+    await writeDefaultGoalConfig(tmp);
+    await writeFile(path.join(tmp, "CONTRIBUTING.md"), "Initial contributing rules.\\n", "utf8");
+    await recordProjectRulesSnapshot(tmp);
+    await writeFile(path.join(tmp, "CONTRIBUTING.md"), "Updated contributing rules.\\n", "utf8");
+
+    const result = await doctor(tmp);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.join("\\n")).toContain("stale project-rule snapshot");
+    expect(result.errors.join("\\n")).toContain("CONTRIBUTING.md");
+    expect(result.errors.join("\\n")).not.toContain("Updated contributing rules");
   });
 
   it("reports malformed event ledgers without throwing", async () => {

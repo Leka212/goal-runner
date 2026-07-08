@@ -6,6 +6,7 @@ import { readJsonFile, writeJsonFile } from "./fs.js";
 import type { GoalEvent, GoalStatus, ReviewVerdict } from "./types.js";
 import { canStopDone } from "./gates.js";
 import { listVerifiedReviews } from "./review.js";
+import { PROJECT_RULES_SLUG } from "./project-rules.js";
 import { auditDoneClaims, type DoneClaimAudit } from "./done-claims.js";
 
 interface DashboardRequiredEvidence {
@@ -80,6 +81,7 @@ export async function buildDashboard(root: string): Promise<DashboardSnapshot> {
 function groupEventsBySlug(events: GoalEvent[]): Record<string, GoalEvent[]> {
   const grouped: Record<string, GoalEvent[]> = {};
   for (const event of events) {
+    if (event.type === "project_rules.snapshot" || event.slug === PROJECT_RULES_SLUG) continue;
     grouped[event.slug] = [...(grouped[event.slug] ?? []), event];
   }
   return grouped;

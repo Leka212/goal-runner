@@ -8,6 +8,7 @@ import { startGoal, appendGoalStep, stopGoal } from "../../src/core/goals.js";
 import { queryLedger } from "../../src/core/query.js";
 import { addReview, reviewArtifactSha256 } from "../../src/core/review.js";
 import { writeDefaultGoalConfig } from "../../src/core/config.js";
+import { recordProjectRulesSnapshot } from "../../src/core/project-rules.js";
 import { verifyCommand } from "../../src/core/verify.js";
 import type { ReviewVerdict } from "../../src/core/types.js";
 
@@ -24,6 +25,38 @@ describe("queryLedger", () => {
     await writeDefaultGoalConfig(tmp);
 
     await expect(queryLedger(tmp)).resolves.toMatchObject({ goals: [] });
+  });
+
+  it("surfaces project-rule snapshot state without rule file contents", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-query-"));
+    await writeDefaultGoalConfig(tmp);
+    await writeFile(path.join(tmp, "SECURITY.md"), "Do not publish before security review.\\n", "utf8");
+
+    const missing = await queryLedger(tmp);
+
+    expect(missing.goals).toEqual([]);
+    expect(missing.project_rules).toMatchObject({
+      discovered_count: 1,
+      satisfied: false,
+      snapshot: null,
+      missing_snapshot: true,
+      stale: false,
+    });
+    expect(JSON.stringify(missing.project_rules)).toContain("SECURITY.md");
+    expect(JSON.stringify(missing.project_rules)).not.toContain("Do not publish");
+
+    await recordProjectRulesSnapshot(tmp);
+    const satisfied = await queryLedger(tmp);
+
+    expect(satisfied.project_rules).toMatchObject({
+      discovered_count: 1,
+      satisfied: true,
+      missing_snapshot: false,
+      stale: false,
+      snapshot: {
+        files: [{ kind: "security", path: "SECURITY.md", sha256: expect.any(String) }],
+      },
+    });
   });
 
   it("returns status, outcome, event, acceptance, evidence, and admissible review summaries for multiple goals", async () => {

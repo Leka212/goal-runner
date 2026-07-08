@@ -1,5 +1,5 @@
 import { buildDashboard, type DashboardSnapshot } from "./dashboard.js";
-import { queryLedger, type LedgerQueryEvidenceSummary, type LedgerQueryGoal, type LedgerQueryReviewSummary } from "./query.js";
+import { queryLedger, type LedgerQueryEvidenceSummary, type LedgerQueryGoal, type LedgerQueryProjectRulesSummary, type LedgerQueryReviewSummary } from "./query.js";
 import { MANDATORY_OUTPUT_REDACTION_PATTERNS, redactText } from "./redaction.js";
 
 interface StatusReportGoal {
@@ -27,7 +27,7 @@ export async function buildStatusReport(root: string): Promise<string> {
   const blockers = collectBlockers(goals);
   const risks = collectRisks(goals);
 
-  const lines: string[] = ["# Goal Status", "", "## Summary", "", summaryTable(goals), "", "## Top blockers", "", ...blockerLines(blockers), "", "## Top risks", "", ...riskLines(risks), "", "## Verified", "", ...verifiedLines(goals), "", "## Inferred", "", ...inferredLines(goals), "", "## Unknown", "", ...unknownLines(goals), "", "## Unmet", "", ...unmetLines(goals), ""];
+  const lines: string[] = ["# Goal Status", "", "## Summary", "", summaryTable(goals), "", "## Top blockers", "", ...blockerLines(blockers), "", "## Top risks", "", ...riskLines(risks), "", "## Project rules", "", ...projectRuleLines(query.project_rules), "", "## Verified", "", ...verifiedLines(goals), "", "## Inferred", "", ...inferredLines(goals), "", "## Unknown", "", ...unknownLines(goals), "", "## Unmet", "", ...unmetLines(goals), ""];
   return `${lines.map(safeLine).join("\n").trimEnd()}\n`;
 }
 
@@ -110,6 +110,19 @@ function riskLines(risks: RiskItem[]): string[] {
   return risks.map((item) => `- ${item.slug}: ${item.stage} ${item.severity} risk — ${item.title} (${item.evidence})`);
 }
 
+
+function projectRuleLines(projectRules: LedgerQueryProjectRulesSummary): string[] {
+  if (projectRules.discovered_count === 0) return ["- no local project rule files detected"];
+  if (projectRules.missing_snapshot) {
+    return [`- missing project-rule snapshot for ${projectRules.discovered_count} file(s): ${projectRules.discovered.map((file) => file.path).join(", ")}`];
+  }
+  if (projectRules.stale) return projectRules.errors.map((error) => `- stale project-rule snapshot: ${error}`);
+  if (!projectRules.snapshot) return ["- no project-rule snapshot recorded"];
+  return [
+    `- snapshot recorded at ${projectRules.snapshot.recorded_at} with ${projectRules.snapshot.files.length} file(s).`,
+    ...projectRules.snapshot.files.map((file) => `- ${file.kind}: ${file.path} (sha256 ${file.sha256})`),
+  ];
+}
 function verifiedLines(goals: StatusReportGoal[]): string[] {
   const lines: string[] = [];
   for (const goal of goals) {

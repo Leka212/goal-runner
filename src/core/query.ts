@@ -4,6 +4,7 @@ import { loadGoalConfig } from "./config.js";
 import { readEvents } from "./ledger.js";
 import { listVerifiedReviews } from "./review.js";
 import { auditDoneClaims, type DoneClaimAudit } from "./done-claims.js";
+import { readProjectRulesState, type ProjectRulesState } from "./project-rules.js";
 import type { EvidenceKind, EvidenceRecord, GoalConfig, GoalEvent, GoalEventType, GoalStatus, ReviewStage, ReviewVerdict, ReviewVerdictValue } from "./types.js";
 
 export interface LedgerQueryOptions {
@@ -21,6 +22,7 @@ export interface LedgerQueryResult {
   generated_at: string;
   filters: LedgerQueryOptions;
   goals: LedgerQueryGoal[];
+  project_rules: LedgerQueryProjectRulesSummary;
 }
 
 export interface LedgerQueryGoal {
@@ -94,10 +96,25 @@ export interface LedgerQueryReviewSummary {
   artifact_sha256: string;
 }
 
+export interface LedgerQueryProjectRulesSummary {
+  discovered_count: number;
+  discovered: Array<{ kind: string; path: string; sha256: string }>;
+  satisfied: boolean;
+  missing_snapshot: boolean;
+  stale: boolean;
+  errors: string[];
+  snapshot: {
+    event_id: string;
+    sequence: number;
+    recorded_at: string;
+    goal_slug: string | null;
+    files: Array<{ kind: string; path: string; sha256: string }>;
+  } | null;
+}
+
 export async function queryLedger(root: string, options: LedgerQueryOptions = {}): Promise<LedgerQueryResult> {
-  const events = await readEvents(root);
+  const [events, config, projectRules] = await Promise.all([readEvents(root), loadGoalConfig(root), readProjectRulesState(root)]);
   const doneClaimAudits = await auditDoneClaims(root, events);
-  const config = await loadGoalConfig(root);
   const goals: LedgerQueryGoal[] = [];
   const from = parseOptionalTimeBoundary(options.from, "from");
   const to = parseOptionalTimeBoundary(options.to, "to");
@@ -109,6 +126,7 @@ export async function queryLedger(root: string, options: LedgerQueryOptions = {}
       return {
         generated_at: new Date().toISOString(),
         filters: { ...options },
+        project_rules: summarizeProjectRules(projectRules),
         goals: [],
       };
     }
@@ -153,13 +171,35 @@ export async function queryLedger(root: string, options: LedgerQueryOptions = {}
   return {
     generated_at: new Date().toISOString(),
     filters: { ...options },
+    project_rules: summarizeProjectRules(projectRules),
     goals,
   };
 }
 
+
+function summarizeProjectRules(state: ProjectRulesState): LedgerQueryProjectRulesSummary {
+  return {
+    discovered_count: state.discovered_count,
+    discovered: state.discovered.map((file) => ({ ...file })),
+    satisfied: state.satisfied,
+    missing_snapshot: state.missing_snapshot,
+    stale: state.stale,
+    errors: [...state.errors],
+    snapshot: state.snapshot
+      ? {
+          event_id: state.snapshot.event_id,
+          sequence: state.snapshot.sequence,
+          recorded_at: state.snapshot.recorded_at,
+          goal_slug: state.snapshot.goal_slug,
+          files: state.snapshot.files.map((file) => ({ ...file })),
+        }
+      : null,
+  };
+}
 function groupEventsBySlug(events: GoalEvent[]): Map<string, GoalEvent[]> {
   const grouped = new Map<string, GoalEvent[]>();
   for (const event of events) {
+    if (event.type === "project_rules.snapshot") continue;
     const existing = grouped.get(event.slug);
     if (existing) existing.push(event);
     else grouped.set(event.slug, [event]);

@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCli } from "../../src/cli/run.js";
 import { addEvidence } from "../../src/core/evidence.js";
+import { readEvents } from "../../src/core/ledger.js";
 import { detectPublishLeaks } from "../../src/core/redaction.js";
 
 let tmp: string | undefined;
@@ -47,6 +48,33 @@ describe("cli", () => {
 
     expect(await runCli(["init"], tmp)).toBe(0);
     expect(await runCli(["status", "missing-goal"], tmp)).toBe(1);
+  });
+
+  it("records project-rule snapshots through goal rules snapshot and goal start --rules-snapshot", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+    expect(await runCli(["init"], tmp)).toBe(0);
+    await writeFile(path.join(tmp, "CONTRIBUTING.md"), "Read local maintainer rules.\\n", "utf8");
+
+    expect(await runCli(["rules", "snapshot"], tmp)).toBe(0);
+    let events = await readEvents(tmp);
+    expect(events.at(-1)).toMatchObject({
+      type: "project_rules.snapshot",
+      slug: "__project_rules__",
+      data: { files: [{ kind: "contributing", path: "CONTRIBUTING.md", sha256: expect.any(String) }] },
+    });
+    expect(JSON.stringify(events.at(-1))).not.toContain("Read local maintainer rules");
+
+    await writeFile(path.join(tmp, "SECURITY.md"), "Security handling text must stay private.\\n", "utf8");
+    expect(await runCli(["start", "ship-cli", "Ship CLI", "--rules-snapshot"], tmp)).toBe(0);
+    events = await readEvents(tmp);
+    expect(events.map((event) => event.type)).toEqual(["project_rules.snapshot", "goal.started", "project_rules.snapshot"]);
+    expect(events.at(-1)).toMatchObject({
+      data: {
+        goal_slug: "ship-cli",
+        files: expect.arrayContaining([{ kind: "security", path: "SECURITY.md", sha256: expect.any(String) }]),
+      },
+    });
+    expect(JSON.stringify(events.at(-1))).not.toContain("Security handling text");
   });
 
   it("prints machine-readable query JSON for agents and applies every query filter", async () => {

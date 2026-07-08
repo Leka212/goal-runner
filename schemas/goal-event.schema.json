@@ -15,7 +15,8 @@
         "evidence.added",
         "review.added",
         "gate.added",
-        "decision.recorded"
+        "decision.recorded",
+        "project_rules.snapshot"
       ]
     },
     "slug": { "type": "string", "minLength": 1 },

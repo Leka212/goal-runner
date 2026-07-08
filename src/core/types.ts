@@ -1,5 +1,5 @@
 export type GoalStatus = "active" | "done" | "blocked" | "reverted" | "abandoned";
-export type GoalEventType = "goal.started" | "goal.step" | "goal.stopped" | "evidence.added" | "review.added" | "gate.added" | "decision.recorded";
+export type GoalEventType = "goal.started" | "goal.step" | "goal.stopped" | "evidence.added" | "review.added" | "gate.added" | "decision.recorded" | "project_rules.snapshot";
 export type PermissionTier = "read" | "suggest" | "comment" | "branch" | "release" | "admin";
 export type ReviewVerdictValue = "GO" | "NO-GO" | "GO-WITH-RISKS";
 export type ReviewStage = "preflight" | "done" | "publish" | "release" | "secrets" | "prod";
