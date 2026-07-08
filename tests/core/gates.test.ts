@@ -150,6 +150,26 @@ describe("gates", () => {
     expect(result.reasons).toEqual(["stale project-rule snapshot: RELEASE_POLICY.md hash changed"]);
   });
 
+  it("fails publish gates when every snapshotted project rule file was removed", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
+    await writeDefaultGoalConfig(tmp);
+    const agentRules = path.join(tmp, "AGENTS.md");
+    await writeFile(agentRules, "Agent rules\n", "utf8");
+    await startGoal(tmp, "ship", "Ship", ["publish readiness"]);
+    await recordProjectRulesSnapshot(tmp, { goalSlug: "ship" });
+    await rm(agentRules);
+    await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Publish review", evidence: "package dry run checked" }], {
+      stage: "publish",
+    });
+
+    const result = await evaluateStageGate(tmp, "ship", "publish");
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toEqual([
+      "stale project-rule snapshot: snapshot includes 1 project rule file(s), but no local project rule files are currently detected",
+    ]);
+  });
+
   it("does not accept hand-written command evidence without ledger provenance", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
     await writeDefaultGoalConfig(tmp);
