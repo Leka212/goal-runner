@@ -7,9 +7,12 @@ export interface AdapterDefinition {
   readonly render: (goalTitle: string) => string;
 }
 
+import { renderAiderGuide } from "./aider.js";
 import { renderAgentsMd } from "./agents-md.js";
 import { renderClaudeSnippet } from "./claude-code.js";
 import { renderCodexSkill } from "./codex.js";
+import { renderContinueDevGuide } from "./continue-dev.js";
+import { renderOpenHandsGuide } from "./openhands.js";
 import { renderOhMyPiGuide } from "./oh-my-pi.js";
 
 export const adapterRegistry: readonly AdapterDefinition[] = [
@@ -43,9 +46,30 @@ export const adapterRegistry: readonly AdapterDefinition[] = [
     aliases: ["omp"],
     render: renderOhMyPiGuide,
   },
+  {
+    id: "aider",
+    label: "Aider",
+    description: "Aider prompt/context guidance with Goal Protocol preflight and evidence hooks.",
+    targetFiles: ["AIDER.md", ".aider/goal-protocol.md"],
+    render: renderAiderGuide,
+  },
+  {
+    id: "continue",
+    label: "Continue.dev",
+    description: "Continue.dev rules guidance with Goal Protocol preflight and evidence hooks.",
+    targetFiles: [".continue/rules/goal-protocol.md"],
+    render: renderContinueDevGuide,
+  },
+  {
+    id: "openhands",
+    label: "OpenHands",
+    description: "OpenHands repository or microagent guidance with Goal Protocol preflight and evidence hooks.",
+    targetFiles: [".openhands/microagents/goal-protocol.md"],
+    render: renderOpenHandsGuide,
+  },
 ];
 
-export type AdapterId = "agents-md" | "codex" | "claude-code" | "oh-my-pi";
+export type AdapterId = "agents-md" | "codex" | "claude-code" | "oh-my-pi" | "aider" | "continue" | "openhands";
 
 export function listAdapters(): readonly AdapterDefinition[] {
   return adapterRegistry;

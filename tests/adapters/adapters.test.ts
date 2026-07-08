@@ -2,9 +2,12 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { adapterRegistry, getAdapter, listAdapters, renderAdapter } from "../../src/adapters/registry.js";
+import { renderAiderGuide } from "../../src/adapters/aider.js";
 import { renderAgentsMd } from "../../src/adapters/agents-md.js";
 import { renderClaudeSnippet } from "../../src/adapters/claude-code.js";
 import { renderCodexSkill } from "../../src/adapters/codex.js";
+import { renderContinueDevGuide } from "../../src/adapters/continue-dev.js";
+import { renderOpenHandsGuide } from "../../src/adapters/openhands.js";
 import { detectPublishLeaks } from "../../src/core/redaction.js";
 
 describe("adapters", () => {
@@ -29,7 +32,7 @@ describe("adapters", () => {
 
   it("exposes deterministic first-class adapter metadata", () => {
     expect(listAdapters()).toEqual(adapterRegistry);
-    expect(adapterRegistry.map((adapter) => adapter.id)).toEqual(["agents-md", "codex", "claude-code", "oh-my-pi"]);
+    expect(adapterRegistry.map((adapter) => adapter.id)).toEqual(["agents-md", "codex", "claude-code", "oh-my-pi", "aider", "continue", "openhands"]);
     for (const adapter of adapterRegistry) {
       expect(adapter.label.length).toBeGreaterThan(0);
       expect(adapter.description.length).toBeGreaterThan(0);
@@ -37,6 +40,31 @@ describe("adapters", () => {
       expect(getAdapter(adapter.id)).toBe(adapter);
     }
     expect(getAdapter("claude")).toBe(getAdapter("claude-code"));
+  });
+
+  it("registers priority generate-only adapters with Goal Protocol evidence hooks", () => {
+    const requiredHooks = [
+      "Goal Protocol",
+      "goal query --json",
+      "preflight review",
+      "goal review --stage preflight",
+      "goal verify",
+      "goal doctor",
+      "evidence reporting hooks",
+    ];
+    const priorityAdapters = [
+      { id: "aider", label: "Aider", output: renderAiderGuide("Ship CLI") },
+      { id: "continue", label: "Continue.dev", output: renderContinueDevGuide("Ship CLI") },
+      { id: "openhands", label: "OpenHands", output: renderOpenHandsGuide("Ship CLI") },
+    ];
+
+    for (const { id, label, output } of priorityAdapters) {
+      expect(getAdapter(id)?.label).toBe(label);
+      expect(output).toContain("Ship CLI");
+      expect(output).toContain("generate-only");
+      for (const hook of requiredHooks) expect(output).toContain(hook);
+      expect(output).not.toMatch(/npm publish|git push|gh pr create|launch|daemon|server|MCP install|external write|hosted automation|submit application|mutate external systems/i);
+    }
   });
 
   it("renders Oh-My-Pi and Claude Code guidance with Goal Protocol gates and evidence hooks", () => {

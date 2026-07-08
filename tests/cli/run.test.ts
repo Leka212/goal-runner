@@ -352,6 +352,9 @@ redaction:
     expect(result.stdout).toContain("codex");
     expect(result.stdout).toContain("claude-code");
     expect(result.stdout).toContain("oh-my-pi");
+    expect(result.stdout).toContain("aider");
+    expect(result.stdout).toContain("continue");
+    expect(result.stdout).toContain("openhands");
     expect(result.stdout).toContain("description");
   });
 
@@ -373,6 +376,31 @@ redaction:
       expect(text).toContain("evidence");
       expect(text).toContain("generate-only");
       expect(text).not.toMatch(/npm publish|git push|gh pr create|launch|daemon|server|MCP install|external write|hosted automation|submit application/i);
+    }
+  });
+
+  it("generates priority Aider, Continue.dev, and OpenHands adapter guidance", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+    const cases = [
+      { id: "aider", out: "AIDER.md", name: "Aider" },
+      { id: "continue", out: ".continue/rules/goal-protocol.md", name: "Continue.dev" },
+      { id: "openhands", out: ".openhands/microagents/goal-protocol.md", name: "OpenHands" },
+    ];
+
+    for (const adapter of cases) {
+      expect(await runCli(["adapt", adapter.id, "Ship CLI", "--out", adapter.out], tmp)).toBe(0);
+      const text = await readFile(path.join(tmp, adapter.out), "utf8");
+      expect(text).toContain(adapter.name);
+      expect(text).toContain("Ship CLI");
+      expect(text).toContain("Goal Protocol");
+      expect(text).toContain("generate-only");
+      expect(text).toContain("goal query --json");
+      expect(text).toContain("preflight review");
+      expect(text).toContain("goal review --stage preflight");
+      expect(text).toContain("goal verify");
+      expect(text).toContain("goal doctor");
+      expect(text).toContain("evidence reporting hooks");
+      expect(text).not.toMatch(/npm publish|git push|gh pr create|launch|daemon|server|MCP install|external write|hosted automation|submit application|mutate external systems/i);
     }
   });
 
