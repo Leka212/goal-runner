@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { readEvents, recordEvent } from "../../src/core/ledger.js";
-import { appendGoalStep, startGoal, stopGoal } from "../../src/core/goals.js";
+import { recordStep, startGoal, stopGoal } from "../../src/core/lifecycle.js";
 
 let tmp: string | undefined;
 
@@ -91,7 +91,7 @@ describe("goal lifecycle", () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-lifecycle-"));
 
     await startGoal(tmp, "ship-cli", "Ship CLI", ["init works", "tests pass"]);
-    await appendGoalStep(tmp, "ship-cli", "Created tests", "test output");
+    await recordStep(tmp, "ship-cli", "Created tests", "test output");
     await expect(stopGoal(tmp, "ship-cli", "done")).resolves.toBeUndefined();
 
     const events = await readEvents(tmp);
