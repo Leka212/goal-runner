@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -259,6 +259,42 @@ redaction:
     expect(text).toContain("provider-neutral");
   });
 
+  it("passes publish-check for clean local content", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+    await writeFile(path.join(tmp, "clean.md"), "Public project notes only.\nNo private tokens here.\n", "utf8");
+
+    const output = await captureStdio(() => runCli(["publish-check", "clean.md"], tmp));
+
+    expect(output.exitCode).toBe(0);
+    expect(output.stderr).toBe("");
+    expect(output.stdout).toContain("no publish leaks found");
+  });
+
+  it("fails publish-check for leaking local content and reports findings", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+    await writeFile(path.join(tmp, "leak.md"), "TOKEN=abc\n/home/mathis/private\n", "utf8");
+
+    const output = await captureStdio(() => runCli(["publish-check", "leak.md"], tmp));
+
+    expect(output.exitCode).not.toBe(0);
+    expect(output.stderr).toContain("publish-check found");
+    expect(output.stderr).toContain("secret-like token text");
+    expect(output.stderr).toContain("private home path");
+  });
+
+  it("keeps publish-check local-only without writing submission artifacts", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+    await writeFile(path.join(tmp, "clean.md"), "Safe local content.\n", "utf8");
+
+    const before = await readdir(tmp);
+    const output = await captureStdio(() => runCli(["publish-check", "clean.md"], tmp));
+    const after = await readdir(tmp);
+
+    expect(output.exitCode).toBe(0);
+    expect(after).toEqual(before);
+    expect(await readFile(path.join(tmp, "clean.md"), "utf8")).toBe("Safe local content.\n");
+  });
+
 });
 
 async function writeDoneGatedConfig(root: string, commandId: string, script: string): Promise<void> {
@@ -298,4 +334,28 @@ redaction:
 `,
     "utf8",
   );
+}
+
+async function captureStdio(action: () => Promise<number>): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const originalStdout = process.stdout.write;
+  const originalStderr = process.stderr.write;
+  let stdout = "";
+  let stderr = "";
+
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    stdout += chunk.toString();
+    return true;
+  }) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    stderr += chunk.toString();
+    return true;
+  }) as typeof process.stderr.write;
+
+  try {
+    const exitCode = await action();
+    return { exitCode, stdout, stderr };
+  } finally {
+    process.stdout.write = originalStdout;
+    process.stderr.write = originalStderr;
+  }
 }

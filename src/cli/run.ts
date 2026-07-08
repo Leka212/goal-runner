@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
 import { renderAgentsMd, renderClaudeSnippet, renderCodexSkill } from "../adapters/index.js";
@@ -9,6 +9,7 @@ import { doctor } from "../core/doctor.js";
 import { ensureDir, writeJsonFile } from "../core/fs.js";
 import { appendGoalStep, startGoal, stopGoal } from "../core/goals.js";
 import { readGoalStatus } from "../core/status.js";
+import { detectPublishLeaks } from "../core/redaction.js";
 import { verifyCommand } from "../core/verify.js";
 import { buildClaudeForOssDossier } from "../oss/dossier.js";
 import type { GoalStatus, ReviewVerdict, ReviewVerdictValue } from "../core/types.js";
@@ -86,6 +87,21 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
 
   program.command("dashboard").action(async () => {
     await buildDashboard(cwd);
+  });
+
+  program.command("publish-check").argument("<path>").action(async (input: string) => {
+    const inputPath = path.resolve(cwd, input);
+    const findings = detectPublishLeaks(await readFile(inputPath, "utf8"));
+    if (findings.length === 0) {
+      process.stdout.write("no publish leaks found\n");
+      return;
+    }
+
+    process.stderr.write(`publish-check found ${findings.length} potential leak(s) in ${input}:\n`);
+    for (const finding of findings) {
+      process.stderr.write(`- ${finding}\n`);
+    }
+    exitCode = 1;
   });
   const adapt = program.command("adapt");
 
