@@ -1,12 +1,16 @@
 import { Command } from "commander";
+import { buildDashboard } from "../core/dashboard.js";
+import { addReview } from "../core/review.js";
 import { writeDefaultGoalConfig } from "../core/config.js";
 import { doctor } from "../core/doctor.js";
 import { appendGoalStep, startGoal, stopGoal } from "../core/goals.js";
 import { readGoalStatus } from "../core/status.js";
 import { verifyCommand } from "../core/verify.js";
-import type { GoalStatus } from "../core/types.js";
+import type { GoalStatus, ReviewVerdict, ReviewVerdictValue } from "../core/types.js";
 
 const goalStatuses = ["active", "done", "blocked", "reverted", "abandoned"] as const satisfies readonly GoalStatus[];
+const reviewVerdicts = ["GO", "NO-GO", "GO-WITH-RISKS"] as const satisfies readonly ReviewVerdictValue[];
+const reviewers = ["human", "adapter", "command"] as const satisfies readonly ReviewVerdict["reviewer"][];
 
 export async function runCli(argv: string[], cwd = process.cwd()): Promise<number> {
   const program = new Command();
@@ -64,6 +68,21 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
       exitCode = evidence.exit_code ?? 0;
     });
 
+  program
+    .command("review")
+    .argument("<slug>")
+    .requiredOption("--verdict <verdict>")
+    .option("--reviewer <reviewer>", "reviewer source", "human")
+    .action(async (slug: string, options: { verdict: string; reviewer: string }) => {
+      if (!isReviewVerdict(options.verdict)) throw new Error(`invalid review verdict: ${options.verdict}`);
+      if (!isReviewer(options.reviewer)) throw new Error(`invalid reviewer: ${options.reviewer}`);
+      await addReview(cwd, slug, options.verdict, options.reviewer, []);
+    });
+
+  program.command("dashboard").action(async () => {
+    await buildDashboard(cwd);
+  });
+
   try {
     await program.parseAsync(argv, { from: "user" });
     return exitCode;
@@ -74,4 +93,12 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
 
 function isGoalStatus(value: string): value is GoalStatus {
   return goalStatuses.includes(value as GoalStatus);
+}
+
+function isReviewVerdict(value: string): value is ReviewVerdictValue {
+  return reviewVerdicts.includes(value as ReviewVerdictValue);
+}
+
+function isReviewer(value: string): value is ReviewVerdict["reviewer"] {
+  return reviewers.includes(value as ReviewVerdict["reviewer"]);
 }

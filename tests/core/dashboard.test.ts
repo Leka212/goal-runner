@@ -1,0 +1,64 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import YAML from "yaml";
+import { writeDefaultGoalConfig } from "../../src/core/config.js";
+import { buildDashboard } from "../../src/core/dashboard.js";
+import { addReview } from "../../src/core/review.js";
+import { startGoal } from "../../src/core/goals.js";
+import { verifyCommand } from "../../src/core/verify.js";
+
+let tmp: string | undefined;
+
+afterEach(async () => {
+  if (tmp) await rm(tmp, { recursive: true, force: true });
+  tmp = undefined;
+});
+
+describe("dashboard", () => {
+  it("renders goal status, evidence state, review state, and done gate state", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-dashboard-"));
+    await writeDefaultGoalConfig(tmp);
+    await configureGatedFastCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["reviewed"]);
+
+    const blockedDashboard = await buildDashboard(tmp);
+    expect(blockedDashboard.goals.ship).toMatchObject({
+      status: "active",
+      last_event: "goal.started",
+      event_count: 1,
+      evidence: { required: [{ id: "unit", satisfied: false }] },
+      review: { required: true, satisfied: false, latest_verdict: null },
+      done_gate: { ok: false },
+    });
+    expect(blockedDashboard.goals.ship.done_gate.reasons.join("\n")).toContain("missing required evidence");
+    expect(blockedDashboard.goals.ship.done_gate.reasons.join("\n")).toContain("missing admissible review verdict");
+
+    await verifyCommand(tmp, "ship", "unit");
+    await addReview(tmp, "ship", "GO-WITH-RISKS", "human", [{ severity: "minor", title: "Risk accepted", evidence: "documented" }]);
+    const readyDashboard = await buildDashboard(tmp);
+
+    expect(readyDashboard.goals.ship).toMatchObject({
+      status: "active",
+      last_event: "review.added",
+      evidence: { required: [{ id: "unit", satisfied: true }] },
+      review: { required: true, satisfied: true, latest_verdict: "GO-WITH-RISKS" },
+      done_gate: { ok: true, reasons: [] },
+    });
+    const persisted = JSON.parse(await readFile(path.join(tmp, ".goal", "dashboard.json"), "utf8"));
+    expect(persisted).toEqual(readyDashboard);
+  });
+});
+
+async function configureGatedFastCommand(root: string): Promise<void> {
+  const configPath = path.join(root, ".goal", "goal.yaml");
+  const config = YAML.parse(await readFile(configPath, "utf8"));
+  config.gates.require_review_for = ["done"];
+  config.verification.commands[0] = {
+    ...config.verification.commands[0],
+    argv: [process.execPath, "-e", "process.exit(0)"],
+    timeout_seconds: 5,
+  };
+  await writeFile(configPath, YAML.stringify(config), "utf8");
+}

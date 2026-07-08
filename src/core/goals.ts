@@ -1,6 +1,7 @@
 import { appendLine, ensureDir, readJsonFile, writeJsonFile } from "./fs.js";
 import { goalRunDir, resolveGoalPaths } from "./paths.js";
 import { recordEvent } from "./ledger.js";
+import { canStopDone } from "./gates.js";
 import type { GoalStatus } from "./types.js";
 
 interface GoalState {
@@ -30,6 +31,10 @@ export async function appendGoalStep(root: string, slug: string, summary: string
 }
 
 export async function stopGoal(root: string, slug: string, status: GoalStatus): Promise<void> {
+  if (status === "done") {
+    const gate = await canStopDone(root, slug);
+    if (!gate.ok) throw new Error(gate.reasons.join("; "));
+  }
   await recordEvent(root, { type: "goal.stopped", slug, data: { status } });
   await persistStoppedGoal(root, slug, status);
   await appendLine(resolveGoalPaths(root).humanLogFile, `\n- Stop: ${slug} -> ${status}\n`);
