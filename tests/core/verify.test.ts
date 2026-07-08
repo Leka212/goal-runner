@@ -3,6 +3,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import YAML from "yaml";
 import { writeDefaultGoalConfig } from "../../src/core/config.js";
 import { fileSha256 } from "../../src/core/fs.js";
 import { startGoal } from "../../src/core/goals.js";
@@ -80,6 +81,34 @@ describe("verify", () => {
     expect(stderr).not.toContain("secret");
   });
 
+  it("uses default redaction patterns before persisting stdout and stderr artifacts", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-verify-"));
+    await writeDefaultGoalConfig(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    const configPath = path.join(tmp, ".goal", "goal.yaml");
+    const config = YAML.parse(await readFile(configPath, "utf8"));
+    config.verification.commands[0] = {
+      ...config.verification.commands[0],
+      argv: [
+        process.execPath,
+        "-e",
+        "console.log('api_key=secret'); console.error('api_key=secret'); process.exit(0)",
+      ],
+      output_byte_cap: 20000,
+    };
+    await writeFile(configPath, YAML.stringify(config), "utf8");
+
+    const evidence = await verifyCommand(tmp, "ship", "unit");
+
+    expect(evidence.exit_code).toBe(0);
+    const stdout = await readFile(evidence.stdout_redacted_path!, "utf8");
+    const stderr = await readFile(evidence.stderr_redacted_path!, "utf8");
+    expect(stdout).toContain("[REDACTED]");
+    expect(stderr).toContain("[REDACTED]");
+    expect(stdout).not.toContain("secret");
+    expect(stderr).not.toContain("secret");
+  });
+
   it("passes argv entries literally instead of evaluating shell metacharacters", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-verify-"));
     await writeDefaultGoalConfig(tmp);
@@ -99,6 +128,13 @@ describe("verify", () => {
     expect(evidence.exit_code).toBe(0);
     await expect(access(path.join(tmp, literalTarget), constants.F_OK)).resolves.toBeUndefined();
     await expect(access(path.join(tmp, "shell-pwned"), constants.F_OK)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not use the ES2024 resolver helper so verification runs on Node 20", async () => {
+    const source = await readFile(path.join(process.cwd(), "src/core/verify.ts"), "utf8");
+    const forbidden = ["Promise", "withResolvers"].join(".");
+
+    expect(source).not.toContain(forbidden);
   });
 });
 

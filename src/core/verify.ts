@@ -68,7 +68,10 @@ function assertArgvCommand(command: VerificationCommand): void {
 async function runVerification(root: string, command: VerificationCommand, patterns: string[]): Promise<VerificationResult> {
   const stdout = createOutputCapture(command.output_byte_cap);
   const stderr = createOutputCapture(command.output_byte_cap);
-  const { promise, resolve } = Promise.withResolvers<number>();
+  let resolveExit!: (exitCode: number) => void;
+  const promise = new Promise<number>((resolve) => {
+    resolveExit = resolve;
+  });
   let settled = false;
   let timedOut = false;
   let forceTimer: NodeJS.Timeout | undefined;
@@ -92,7 +95,7 @@ async function runVerification(root: string, command: VerificationCommand, patte
     settled = true;
     clearTimeout(timeout);
     clearTimeout(forceTimer);
-    resolve(timedOut ? 124 : (code ?? 1));
+    resolveExit(timedOut ? 124 : (code ?? 1));
   });
 
   const exitCode = await promise;

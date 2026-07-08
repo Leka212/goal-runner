@@ -43,7 +43,7 @@ export function defaultGoalConfig(projectName: string): GoalConfig {
     redaction: {
       deny_env_patterns: ["TOKEN", "SECRET", "KEY", "PASSWORD", "COOKIE"],
       deny_path_patterns: [".env", "credentials", "id_rsa", ".pem"],
-      deny_output_patterns: ["(?i)api[_-]?key", "(?i)bearer\\s+[a-z0-9._-]+"],
+      deny_output_patterns: ["(?i)api[_-]?key\\s*[:=]\\s*\\S+", "(?i)bearer\\s+[a-z0-9._-]+"],
     },
     oss: { registries: ["npm"], package_names: [] },
   };

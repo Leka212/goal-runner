@@ -96,6 +96,58 @@ redaction:
     expect(await readFile(path.join(evidenceDir, "redacted-output", "ok.stdout.txt"), "utf8")).toContain("verified");
   });
 
+  it("returns the verification command exit code after writing evidence for failures", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+
+    expect(await runCli(["init"], tmp)).toBe(0);
+    expect(await runCli(["start", "ship-cli", "Ship CLI", "--acceptance", "tests pass"], tmp)).toBe(0);
+    await writeFile(
+      path.join(tmp, ".goal", "goal.yaml"),
+      `project:
+  name: test
+  public_safe: true
+limits:
+  max_iterations: 8
+  max_minutes: 45
+  max_workers: 4
+  max_review_rounds: 3
+  stale_no_output_seconds: 900
+  require_explicit_next_decision: true
+  kill_switch_file: .goal/KILL
+permissions:
+  default_tier: read
+  tiers: [read, suggest, comment, branch, release, admin]
+  fork_pr_safe_mode: true
+verification:
+  commands:
+    - id: fail
+      argv: [${JSON.stringify(process.execPath)}, -e, ${JSON.stringify("console.error('api_key=secret'); process.exit(7)")}]
+      timeout_seconds: 5
+      required_for_done: true
+      redact: true
+      output_byte_cap: 20000
+gates:
+  require_review_for: []
+  review_verdicts:
+    allowed: [GO, GO-WITH-RISKS]
+redaction:
+  deny_env_patterns: [TOKEN]
+  deny_path_patterns: [.env]
+  deny_output_patterns: ['(?i)api[_-]?key=\\S+']
+`,
+      "utf8",
+    );
+
+    expect(await runCli(["verify", "ship-cli", "--command", "fail"], tmp)).toBe(7);
+
+    const evidenceDir = path.join(tmp, ".goal", "goals", "ship-cli", "evidence");
+    const events = await readFile(path.join(tmp, ".goal", "events.jsonl"), "utf8");
+    expect(events).toContain("evidence.added");
+    const stderr = await readFile(path.join(evidenceDir, "redacted-output", "fail.stderr.txt"), "utf8");
+    expect(stderr).toContain("[REDACTED]");
+    expect(stderr).not.toContain("secret");
+  });
+
   it("returns a failing exit code when doctor finds an invalid workspace", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
 

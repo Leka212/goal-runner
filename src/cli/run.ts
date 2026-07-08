@@ -12,6 +12,7 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
   const program = new Command();
   program.exitOverride();
   program.configureOutput({ writeOut: () => undefined, writeErr: () => undefined });
+  let exitCode = 0;
   program.name("goal");
 
   program.command("init").action(async () => {
@@ -59,12 +60,13 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
     .argument("<slug>")
     .requiredOption("--command <id>")
     .action(async (slug: string, options: { command: string }) => {
-      await verifyCommand(cwd, slug, options.command);
+      const evidence = await verifyCommand(cwd, slug, options.command);
+      exitCode = evidence.exit_code ?? 0;
     });
 
   try {
     await program.parseAsync(argv, { from: "user" });
-    return 0;
+    return exitCode;
   } catch {
     return 1;
   }
