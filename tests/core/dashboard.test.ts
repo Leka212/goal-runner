@@ -6,7 +6,7 @@ import YAML from "yaml";
 import { writeDefaultGoalConfig } from "../../src/core/config.js";
 import { buildDashboard } from "../../src/core/dashboard.js";
 import { addReview } from "../../src/core/review.js";
-import { startGoal } from "../../src/core/goals.js";
+import { startGoal, stopGoal } from "../../src/core/goals.js";
 import { verifyCommand } from "../../src/core/verify.js";
 import { recordEvent } from "../../src/core/ledger.js";
 
@@ -80,6 +80,30 @@ describe("dashboard", () => {
     expect(dashboard.goals.ship.done_gate.reasons.join("\n")).toContain("missing required evidence");
   });
 
+
+  it("marks valid and invalid done-claim provenance", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-dashboard-"));
+    await writeDefaultGoalConfig(tmp);
+    await configureGatedFastCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    await verifyCommand(tmp, "ship", "unit");
+    const review = await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Ready", evidence: "tests pass" }]);
+    await stopGoal(tmp, "ship", "done");
+
+    await expect(buildDashboard(tmp)).resolves.toMatchObject({
+      goals: { ship: { done_claim: { valid: true, reasons: [] } } },
+    });
+
+    await writeFile(
+      path.join(tmp, ".goal", "goals", "ship", "reviews", `${review.id}.json`),
+      JSON.stringify({ ...review, findings: [] }, null, 2),
+      "utf8",
+    );
+
+    await expect(buildDashboard(tmp)).resolves.toMatchObject({
+      goals: { ship: { done_claim: { valid: false, reasons: expect.arrayContaining([expect.stringContaining("referenced review")]) } } },
+    });
+  });
   it("derives status from the append-only ledger when goal.json diverges", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-dashboard-"));
     await writeDefaultGoalConfig(tmp);

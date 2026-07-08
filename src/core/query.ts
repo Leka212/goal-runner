@@ -3,6 +3,7 @@ import { listVerifiedEvidence } from "./evidence.js";
 import { loadGoalConfig } from "./config.js";
 import { readEvents } from "./ledger.js";
 import { listVerifiedReviews } from "./review.js";
+import { auditDoneClaims, type DoneClaimAudit } from "./done-claims.js";
 import type { EvidenceKind, EvidenceRecord, GoalConfig, GoalEvent, GoalEventType, GoalStatus, ReviewVerdict, ReviewVerdictValue } from "./types.js";
 
 export interface LedgerQueryOptions {
@@ -35,6 +36,10 @@ export interface LedgerQueryGoal {
   verified: {
     evidence: LedgerQueryEvidenceSummary[];
     reviews: LedgerQueryReviewSummary[];
+  };
+  done_claim: {
+    valid: boolean | null;
+    reasons: string[];
   };
   inferred: {
     summary: string;
@@ -78,6 +83,7 @@ export interface LedgerQueryReviewSummary {
 
 export async function queryLedger(root: string, options: LedgerQueryOptions = {}): Promise<LedgerQueryResult> {
   const events = await readEvents(root);
+  const doneClaimAudits = await auditDoneClaims(root, events);
   const goals: LedgerQueryGoal[] = [];
   const from = parseOptionalTimeBoundary(options.from, "from");
   const to = parseOptionalTimeBoundary(options.to, "to");
@@ -125,6 +131,7 @@ export async function queryLedger(root: string, options: LedgerQueryOptions = {}
         evidence: evidence.sort(byCreatedAtThenId).map((record) => summarizeEvidence(root, record)),
         reviews: reviews.sort(byCreatedAtThenId).map(summarizeReview),
       },
+      done_claim: summarizeDoneClaim(goalEvents, doneClaimAudits),
       inferred: inferGoalSummary(slug, status, outcome, outcomes, goalEvents),
     });
   }
@@ -226,6 +233,14 @@ function summarizeReview(review: ReviewVerdict): LedgerQueryReviewSummary {
     findings: review.findings.map((finding) => ({ ...finding })),
     artifact_sha256: review.artifact_sha256,
   };
+}
+
+function summarizeDoneClaim(events: GoalEvent[], audits: DoneClaimAudit[]): LedgerQueryGoal["done_claim"] {
+  const latestDoneEvent = [...events].reverse().find((event) => event.type === "goal.stopped" && event.data.status === "done");
+  if (!latestDoneEvent) return { valid: null, reasons: [] };
+  const audit = audits.find((item) => item.sequence === latestDoneEvent.sequence);
+  if (!audit) return { valid: false, reasons: ["missing done-claim audit"] };
+  return { valid: audit.valid, reasons: audit.reasons };
 }
 
 function inferGoalSummary(

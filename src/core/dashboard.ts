@@ -6,6 +6,7 @@ import { readJsonFile, writeJsonFile } from "./fs.js";
 import type { GoalEvent, GoalStatus, ReviewVerdict } from "./types.js";
 import { canStopDone } from "./gates.js";
 import { listVerifiedReviews } from "./review.js";
+import { auditDoneClaims, type DoneClaimAudit } from "./done-claims.js";
 
 interface DashboardRequiredEvidence {
   id: string;
@@ -21,6 +22,7 @@ interface DashboardGoal {
   evidence: { required: DashboardRequiredEvidence[] };
   review: { required: boolean; satisfied: boolean; latest_verdict: ReviewVerdict["verdict"] | null };
   done_gate: { ok: boolean; reasons: string[] };
+  done_claim: { valid: boolean | null; reasons: string[] };
 }
 
 export interface DashboardSnapshot {
@@ -30,6 +32,7 @@ export interface DashboardSnapshot {
 export async function buildDashboard(root: string): Promise<DashboardSnapshot> {
   const config = await loadGoalConfig(root);
   const events = await readEvents(root);
+  const doneClaimAudits = await auditDoneClaims(root, events);
   const eventsBySlug = groupEventsBySlug(events);
   const goals: Record<string, DashboardGoal> = {};
 
@@ -64,6 +67,7 @@ export async function buildDashboard(root: string): Promise<DashboardSnapshot> {
         latest_verdict: latestReview?.verdict ?? null,
       },
       done_gate: doneGate,
+      done_claim: summarizeDoneClaim(goalEvents, doneClaimAudits),
     };
   }
 
@@ -92,6 +96,14 @@ function statusFromEvents(events: GoalEvent[]): GoalStatus {
 function titleFromEvents(events: GoalEvent[]): string | null {
   const started = events.find((event) => event.type === "goal.started");
   return typeof started?.data.title === "string" ? started.data.title : null;
+}
+
+function summarizeDoneClaim(events: GoalEvent[], audits: DoneClaimAudit[]): DashboardGoal["done_claim"] {
+  const latestDoneEvent = [...events].reverse().find((event) => event.type === "goal.stopped" && event.data.status === "done");
+  if (!latestDoneEvent) return { valid: null, reasons: [] };
+  const audit = audits.find((item) => item.sequence === latestDoneEvent.sequence);
+  if (!audit) return { valid: false, reasons: ["missing done-claim audit"] };
+  return { valid: audit.valid, reasons: audit.reasons };
 }
 
 async function readGoalState(root: string, slug: string): Promise<{ title: string; status: GoalStatus } | null> {

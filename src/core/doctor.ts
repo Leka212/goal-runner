@@ -2,6 +2,7 @@ import { access } from "node:fs/promises";
 import path from "node:path";
 import { loadGoalConfig } from "./config.js";
 import { readEvents } from "./ledger.js";
+import { auditDoneClaims } from "./done-claims.js";
 
 export interface DoctorResult {
   ok: boolean;
@@ -29,6 +30,17 @@ export async function doctor(root: string): Promise<DoctorResult> {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     errors.push(`invalid event ledger: ${message}`);
+  }
+
+  try {
+    const events = await readEvents(root);
+    const audits = await auditDoneClaims(root, events);
+    for (const audit of audits.filter((item) => !item.valid)) {
+      errors.push(`invalid done claim for ${audit.slug} at event ${audit.sequence}: ${audit.reasons.join("; ")}`);
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    errors.push(`invalid done-claim audit: ${message}`);
   }
 
   return { ok: errors.length === 0, errors };

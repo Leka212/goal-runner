@@ -2,11 +2,13 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import YAML from "yaml";
 import { addEvidence } from "../../src/core/evidence.js";
 import { startGoal, appendGoalStep, stopGoal } from "../../src/core/goals.js";
 import { queryLedger } from "../../src/core/query.js";
 import { addReview, reviewArtifactSha256 } from "../../src/core/review.js";
 import { writeDefaultGoalConfig } from "../../src/core/config.js";
+import { verifyCommand } from "../../src/core/verify.js";
 import type { ReviewVerdict } from "../../src/core/types.js";
 
 let tmp: string | undefined;
@@ -189,6 +191,30 @@ describe("queryLedger", () => {
     expect(result.goals[0].inferred.prior_failure).toContain("blocked");
   });
 
+
+  it("surfaces valid and invalid done-claim provenance", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-query-"));
+    await writeDefaultGoalConfig(tmp);
+    await configureGatedFastCommand(tmp);
+    await startGoal(tmp, "ship", "Ship feature", ["tests pass"]);
+    await verifyCommand(tmp, "ship", "unit");
+    const review = await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Ready", evidence: "tests pass" }]);
+    await stopGoal(tmp, "ship", "done");
+
+    await expect(queryLedger(tmp, { slug: "ship" })).resolves.toMatchObject({
+      goals: [{ done_claim: { valid: true, reasons: [] } }],
+    });
+
+    await writeFile(
+      path.join(tmp, ".goal", "goals", "ship", "reviews", `${review.id}.json`),
+      JSON.stringify({ ...review, findings: [] }, null, 2),
+      "utf8",
+    );
+
+    await expect(queryLedger(tmp, { slug: "ship" })).resolves.toMatchObject({
+      goals: [{ done_claim: { valid: false, reasons: expect.arrayContaining([expect.stringContaining("referenced review")]) } }],
+    });
+  });
   it("rejects a corrupted ledger instead of returning untrustworthy query data", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-query-"));
     await writeDefaultGoalConfig(tmp);
@@ -197,3 +223,15 @@ describe("queryLedger", () => {
     await expect(queryLedger(tmp)).rejects.toThrow("invalid ledger line 1");
   });
 });
+
+async function configureGatedFastCommand(root: string): Promise<void> {
+  const configPath = path.join(root, ".goal", "goal.yaml");
+  const config = YAML.parse(await readFile(configPath, "utf8"));
+  config.gates.require_review_for = ["done"];
+  config.verification.commands[0] = {
+    ...config.verification.commands[0],
+    argv: [process.execPath, "-e", "process.exit(0)"],
+    timeout_seconds: 5,
+  };
+  await writeFile(configPath, YAML.stringify(config), "utf8");
+}

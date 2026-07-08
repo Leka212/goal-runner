@@ -89,6 +89,24 @@ export interface ReviewVerdict {
   artifact_sha256: string;
 }
 
+export interface DoneGateEvidenceProvenance {
+  id: string;
+  command_id: string;
+  sha256: string;
+}
+
+export interface DoneGateReviewProvenance {
+  id: string;
+  verdict: ReviewVerdictValue;
+  artifact_sha256: string;
+}
+
+export interface DoneGateProvenance {
+  checked_at: string;
+  evidence: DoneGateEvidenceProvenance[];
+  reviews: DoneGateReviewProvenance[];
+}
+
 export interface RouteCard {
   route: {
     category: "direct" | "mission" | "worker-wave" | "review" | "research" | "skill-capability" | "publish-gated";

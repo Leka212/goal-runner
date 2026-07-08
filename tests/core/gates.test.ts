@@ -32,19 +32,26 @@ describe("gates", () => {
     await expect(stopGoal(tmp, "ship", "done")).rejects.toThrow(/missing required evidence/);
   });
 
-  it("allows done when required evidence and an admissible review exist", async () => {
+  it("allows done and records gate provenance for required evidence and an admissible review", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-gate-"));
     await writeDefaultGoalConfig(tmp);
     await requireDoneReview(tmp);
     await useFastRequiredCommand(tmp);
     await startGoal(tmp, "ship", "Ship", ["evidence"]);
-    await verifyCommand(tmp, "ship", "unit");
-    await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Ready", evidence: "targeted tests pass" }]);
+    const evidence = await verifyCommand(tmp, "ship", "unit");
+    const review = await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Ready", evidence: "targeted tests pass" }]);
 
     const result = await canStopDone(tmp, "ship");
 
     expect(result).toEqual({ ok: true, reasons: [] });
     await expect(stopGoal(tmp, "ship", "done")).resolves.toBeUndefined();
+    const events = (await readFile(path.join(tmp, ".goal", "events.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const stopped = events.find((event) => event.type === "goal.stopped");
+    expect(stopped.data.gate_provenance).toMatchObject({
+      evidence: [{ id: evidence.id, command_id: "unit", sha256: evidence.sha256 }],
+      reviews: [{ id: review.id, verdict: "GO", artifact_sha256: review.artifact_sha256 }],
+    });
+    expect(Date.parse(stopped.data.gate_provenance.checked_at)).not.toBeNaN();
     const goal = JSON.parse(await readFile(path.join(tmp, ".goal", "goals", "ship", "goal.json"), "utf8"));
     expect(goal.status).toBe("done");
   });
