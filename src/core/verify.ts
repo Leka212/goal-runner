@@ -5,7 +5,7 @@ import { loadGoalConfig } from "./config.js";
 import { addEvidence } from "./evidence.js";
 import { ensureDir, fileSha256, writeJsonFile } from "./fs.js";
 import { goalRunDir } from "./paths.js";
-import { redactText } from "./redaction.js";
+import { MANDATORY_OUTPUT_REDACTION_PATTERNS, redactText } from "./redaction.js";
 import type { EvidenceRecord, VerificationCommand } from "./types.js";
 
 interface OutputCapture {
@@ -33,7 +33,10 @@ export async function verifyCommand(root: string, slug: string, commandId: strin
   const outputDir = path.join(goalRunDir(root, slug), "evidence", "redacted-output");
   await ensureDir(outputDir);
 
-  const result = await runVerification(root, command, config.redaction.deny_output_patterns);
+  const result = await runVerification(root, command, [
+    ...MANDATORY_OUTPUT_REDACTION_PATTERNS,
+    ...config.redaction.deny_output_patterns,
+  ]);
   const stdoutPath = path.join(outputDir, `${commandId}.stdout.txt`);
   const stderrPath = path.join(outputDir, `${commandId}.stderr.txt`);
   await writeFile(stdoutPath, result.stdout, "utf8");

@@ -91,7 +91,7 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
   });
 
   program.command("publish-check").argument("<path>").action(async (input: string) => {
-    const inputPath = path.resolve(cwd, input);
+    const inputPath = resolveWorkspacePath(cwd, input);
     const findings = detectPublishLeaks(await readFile(inputPath, "utf8"));
     if (findings.length === 0) {
       process.stdout.write("no publish leaks found\n");
@@ -216,13 +216,22 @@ function collectListOption(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
+function resolveWorkspacePath(root: string, requestedPath: string): string {
+  if (path.isAbsolute(requestedPath)) throw new Error(`path must be relative to the current workspace: ${requestedPath}`);
+  const workspaceRoot = path.resolve(root);
+  const resolvedPath = path.resolve(workspaceRoot, requestedPath);
+  const relative = path.relative(workspaceRoot, resolvedPath);
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return resolvedPath;
+  throw new Error(`path escapes the current workspace: ${requestedPath}`);
+}
+
 async function emitGeneratedAdapter(root: string, text: string, options: AdapterCliOptions): Promise<void> {
   if (!options.out) {
     process.stdout.write(text);
     return;
   }
 
-  const outPath = path.resolve(root, options.out);
+  const outPath = resolveWorkspacePath(root, options.out);
   await ensureDir(path.dirname(outPath));
   await writeFile(outPath, text, "utf8");
 }

@@ -134,6 +134,34 @@ describe("verify", () => {
     expect(stderr).not.toContain("secret");
   });
 
+  it("keeps mandatory output redactors when configured output patterns are empty", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-verify-"));
+    await writeDefaultGoalConfig(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    const configPath = path.join(tmp, ".goal", "goal.yaml");
+    const config = YAML.parse(await readFile(configPath, "utf8"));
+    config.redaction.deny_output_patterns = [];
+    config.verification.commands[0] = {
+      ...config.verification.commands[0],
+      argv: [
+        process.execPath,
+        "-e",
+        "console.log('api_key=secret'); console.error('Authorization: Bearer secret-token'); process.exit(0)",
+      ],
+      output_byte_cap: 20000,
+    };
+    await writeFile(configPath, YAML.stringify(config), "utf8");
+
+    const evidence = await verifyCommand(tmp, "ship", "unit");
+
+    const stdout = await readFile(evidence.stdout_redacted_path!, "utf8");
+    const stderr = await readFile(evidence.stderr_redacted_path!, "utf8");
+    expect(stdout).toContain("[REDACTED]");
+    expect(stderr).toContain("[REDACTED]");
+    expect(stdout).not.toContain("secret");
+    expect(stderr).not.toContain("secret-token");
+  });
+
   it("passes argv entries literally instead of evaluating shell metacharacters", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-verify-"));
     await writeDefaultGoalConfig(tmp);

@@ -26,17 +26,22 @@ describe("adapters", () => {
     expect(claudeSnippet).not.toMatch(/permission boundary/i);
   });
 
-  it("detects public fixture leaks", async () => {
+  it("detects generic synthetic publish leaks without relying on private markers", async () => {
     const fixture = await readFile(path.join(import.meta.dirname, "..", "fixtures", "private-leak", "README.md"), "utf8");
+    const detectorSource = await readFile(path.join(import.meta.dirname, "..", "..", "src", "core", "redaction.ts"), "utf8");
+
+    expect(detectorSource).not.toMatch(/\b[A-Z][a-z]{4}y\|[A-Z][a-z]{4}a\b/);
+    expect(fixture).not.toMatch(/\/home\/(?!example\b)[a-z0-9_-]+\b/i);
+    expect(fixture).not.toMatch(/\b(?:10|100|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/);
+    expect(fixture).not.toMatch(/\b(?!ExampleInternalProject\b)[A-Z][A-Za-z]+ internal\b/);
 
     expect(detectPublishLeaks("TOKEN=abc")).toContain("secret-like token text");
     expect(detectPublishLeaks("Authorization: Bearer abc.def_123")).toContain("secret-like token text");
-    expect(detectPublishLeaks("/home/mathis/private")).toContain("private home path");
-    expect(detectPublishLeaks("Neody internal")).toContain("private project name");
-    expect(detectPublishLeaks("Linda internal")).toContain("private project name");
-    expect(detectPublishLeaks("host 100.83.96.73")).toContain("ip address");
+    expect(detectPublishLeaks("/home/synthetic/private")).toContain("private home path");
+    expect(detectPublishLeaks("ExampleInternalProject")).toContain("internal/private marker");
+    expect(detectPublishLeaks("host 203.0.113.10")).toContain("ip address");
     expect(detectPublishLeaks(fixture)).toEqual(
-      expect.arrayContaining(["secret-like token text", "private home path", "private project name", "ip address"]),
+      expect.arrayContaining(["secret-like token text", "internal/private marker", "ip address"]),
     );
   });
 });

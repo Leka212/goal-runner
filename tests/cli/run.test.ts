@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -271,14 +272,28 @@ redaction:
   });
   it("writes generated adapter text only to the requested local file", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
-    const out = path.join(tmp, "AGENTS.md");
+    const out = "AGENTS.md";
 
     expect(await runCli(["adapt", "agents-md", "Ship CLI", "--out", out], tmp)).toBe(0);
 
-    const text = await readFile(out, "utf8");
+    const text = await readFile(path.join(tmp, out), "utf8");
     expect(text).toContain("Ship CLI");
     expect(text).toContain("generate-only");
     expect(text).toContain("provider-neutral");
+  });
+
+  it("rejects adapter output paths that are absolute or escape the workspace", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+    const workspace = path.join(tmp, "workspace");
+    await mkdir(workspace);
+    const absoluteOut = path.join(tmp, "absolute.md");
+    const escapingOut = path.join(tmp, "escape.md");
+
+    expect(await runCli(["adapt", "agents-md", "Ship CLI", "--out", absoluteOut], workspace)).toBe(1);
+    await expect(readFile(absoluteOut, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    expect(await runCli(["adapt", "agents-md", "Ship CLI", "--out", "../escape.md"], workspace)).toBe(1);
+    await expect(readFile(escapingOut, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("passes publish-check for clean local content", async () => {
@@ -292,9 +307,19 @@ redaction:
     expect(output.stdout).toContain("no publish leaks found");
   });
 
+  it("passes publish-check for packaged public examples", async () => {
+    const packageRoot = path.resolve(import.meta.dirname, "..", "..");
+
+    const output = await captureStdio(() => runCli(["publish-check", "examples/manual-maintainer/goal.yaml"], packageRoot));
+
+    expect(output.exitCode).toBe(0);
+    expect(output.stderr).toBe("");
+    expect(output.stdout).toContain("no publish leaks found");
+  });
+
   it("fails publish-check for leaking local content and reports findings", async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
-    await writeFile(path.join(tmp, "leak.md"), "TOKEN=abc\n/home/mathis/private\n", "utf8");
+    await writeFile(path.join(tmp, "leak.md"), "TOKEN=abc\n/home/synthetic/private\n", "utf8");
 
     const output = await captureStdio(() => runCli(["publish-check", "leak.md"], tmp));
 
@@ -302,6 +327,17 @@ redaction:
     expect(output.stderr).toContain("publish-check found");
     expect(output.stderr).toContain("secret-like token text");
     expect(output.stderr).toContain("private home path");
+  });
+
+  it("rejects publish-check reads outside the workspace", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+    const workspace = path.join(tmp, "workspace");
+    await mkdir(workspace);
+    const outsideFile = path.join(tmp, "outside.md");
+    await writeFile(outsideFile, "Public notes\n", "utf8");
+
+    expect(await runCli(["publish-check", outsideFile], workspace)).toBe(1);
+    expect(await runCli(["publish-check", "../outside.md"], workspace)).toBe(1);
   });
 
   it("keeps publish-check local-only without writing submission artifacts", async () => {
@@ -315,6 +351,33 @@ redaction:
     expect(output.exitCode).toBe(0);
     expect(after).toEqual(before);
     expect(await readFile(path.join(tmp, "clean.md"), "utf8")).toBe("Safe local content.\n");
+  });
+
+  it("packs only runtime and public artifacts", () => {
+    const packageRoot = path.resolve(import.meta.dirname, "..", "..");
+
+    const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
+      cwd: packageRoot,
+      encoding: "utf8",
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    const [{ files }] = JSON.parse(result.stdout) as [{ files: Array<{ path: string }> }];
+    const packageFiles = files.map((file) => file.path);
+
+    expect(packageFiles).toEqual(
+      expect.arrayContaining([
+        "package.json",
+        "README.md",
+        "LICENSE",
+        "schemas/goal-config.schema.json",
+        "examples/manual-maintainer/goal.yaml",
+      ]),
+    );
+    expect(packageFiles.some((file) => file.startsWith(".superpowers/"))).toBe(false);
+    expect(packageFiles.some((file) => file.startsWith("tests/"))).toBe(false);
+    expect(packageFiles.some((file) => file.startsWith("src/"))).toBe(false);
+    expect(packageFiles.some((file) => file.includes("private-leak"))).toBe(false);
   });
 
 });

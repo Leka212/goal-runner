@@ -1,4 +1,10 @@
-export function redactText(input: string, patterns: string[]): string {
+export const MANDATORY_OUTPUT_REDACTION_PATTERNS = [
+  "(?i)\\bapi[_-]?key\\s*[:=]\\s*\\S+",
+  "(?i)\\bauthorization\\s*:\\s*bearer\\s+\\S+",
+  "(?i)\\bbearer\\s+[a-z0-9._~+/=-]+",
+] as const;
+
+export function redactText(input: string, patterns: readonly string[]): string {
   return patterns.reduce((text, pattern) => {
     const { source, flags } = parsePattern(pattern);
     return text.replace(new RegExp(source, flags), "[REDACTED]");
@@ -17,8 +23,10 @@ export function capOutput(input: string, maxBytes: number): string {
 export function detectPublishLeaks(text: string): string[] {
   const findings: string[] = [];
   if (hasSecretLikeText(text)) findings.push("secret-like token text");
-  if (/\/home\/mathis\b/i.test(text)) findings.push("private home path");
-  if (/\b(?:Neody|Linda)\b/i.test(text)) findings.push("private project name");
+  if (/\/home\/(?!example\b)[A-Za-z0-9._-]+\b/.test(text)) findings.push("private home path");
+  if (/\b[A-Z][A-Za-z0-9_-]*(?:Internal|Private)[A-Za-z0-9_-]*\b/.test(text)) {
+    findings.push("internal/private marker");
+  }
   if (/\b\d{1,3}(?:\.\d{1,3}){3}\b/.test(text)) findings.push("ip address");
   return findings;
 }

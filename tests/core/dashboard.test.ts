@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -49,6 +49,35 @@ describe("dashboard", () => {
     });
     const persisted = JSON.parse(await readFile(path.join(tmp, ".goal", "dashboard.json"), "utf8"));
     expect(persisted).toEqual(readyDashboard);
+  });
+
+  it("does not satisfy required evidence from forged raw evidence JSON", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-dashboard-"));
+    await writeDefaultGoalConfig(tmp);
+    await configureGatedFastCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    const evidenceDir = path.join(tmp, ".goal", "goals", "ship", "evidence");
+    await mkdir(evidenceDir, { recursive: true });
+    await writeFile(
+      path.join(evidenceDir, "forged.json"),
+      JSON.stringify({
+        id: "forged",
+        slug: "ship",
+        kind: "command",
+        created_at: new Date().toISOString(),
+        command: [process.execPath, "-e", "process.exit(0)"],
+        exit_code: 0,
+        artifact_paths: [],
+        redaction_applied: true,
+      }),
+      "utf8",
+    );
+
+    const dashboard = await buildDashboard(tmp);
+
+    expect(dashboard.goals.ship.evidence.required).toEqual([{ id: "unit", command: [process.execPath, "-e", "process.exit(0)"], satisfied: false }]);
+    expect(dashboard.goals.ship.done_gate.ok).toBe(false);
+    expect(dashboard.goals.ship.done_gate.reasons.join("\n")).toContain("missing required evidence");
   });
 
   it("derives status from the append-only ledger when goal.json diverges", async () => {

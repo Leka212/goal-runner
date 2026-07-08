@@ -1,9 +1,9 @@
 import { loadGoalConfig } from "./config.js";
-import { listJson } from "./gates.js";
+import { listVerifiedEvidence } from "./evidence.js";
 import { readEvents } from "./ledger.js";
 import { goalRunDir, resolveGoalPaths } from "./paths.js";
 import { readJsonFile, writeJsonFile } from "./fs.js";
-import type { EvidenceRecord, GoalEvent, GoalStatus, ReviewVerdict } from "./types.js";
+import type { GoalEvent, GoalStatus, ReviewVerdict } from "./types.js";
 import { canStopDone } from "./gates.js";
 import { listVerifiedReviews } from "./review.js";
 
@@ -34,7 +34,7 @@ export async function buildDashboard(root: string): Promise<DashboardSnapshot> {
   const goals: Record<string, DashboardGoal> = {};
 
   for (const [slug, goalEvents] of Object.entries(eventsBySlug)) {
-    const evidence = await listJson<EvidenceRecord>(`${goalRunDir(root, slug)}/evidence`);
+    const evidence = await listVerifiedEvidence(root, slug);
     const reviews = await listVerifiedReviews(root, slug);
     const latestReview = latestByCreatedAt(reviews);
     const doneGate = await canStopDone(root, slug);
