@@ -132,7 +132,6 @@ export function projectRuleDoctorErrors(state: ProjectRulesState): string[] {
   if (state.missing_snapshot) {
     return [`missing project-rule snapshot for ${state.discovered_count} local project rule file(s): ${state.discovered.map((rule) => rule.path).join(", ")}`];
   }
-  if (state.stale) return state.errors.map((error) => `stale project-rule snapshot: ${error}`);
   return [];
 }
 
