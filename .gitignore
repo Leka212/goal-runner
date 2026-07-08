@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .goal/
+.superpowers/
 GOALS.md
 coverage/
 *.log
