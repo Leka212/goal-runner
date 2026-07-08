@@ -111,6 +111,54 @@ describe("doctor", () => {
 
     await expect(doctor(tmp)).resolves.toEqual({ ok: true, errors: [] });
   });
+  it("reports done claims whose provenance was backfilled after the done event", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-doctor-"));
+    await writeDefaultGoalConfig(tmp);
+    await configureGatedFastCommand(tmp);
+    await startGoal(tmp, "ship", "Ship", ["evidence"]);
+    const evidence = await verifyCommand(tmp, "ship", "unit");
+    const review = await addReview(tmp, "ship", "GO", "human", [{ severity: "minor", title: "Ready", evidence: "tests pass" }]);
+    expect(evidence.sha256).toEqual(expect.any(String));
+
+    const eventsFile = path.join(tmp, ".goal", "events.jsonl");
+    const [startedEvent] = (await readFile(eventsFile, "utf8")).trim().split("\n");
+    await writeFile(eventsFile, `${startedEvent}\n`, "utf8");
+    await recordEvent(tmp, {
+      type: "goal.stopped",
+      slug: "ship",
+      data: {
+        status: "done",
+        gate_provenance: {
+          checked_at: new Date().toISOString(),
+          evidence: [{ id: evidence.id, command_id: "unit", sha256: evidence.sha256! }],
+          reviews: [{ id: review.id, verdict: "GO", artifact_sha256: review.artifact_sha256 }],
+        },
+      },
+    });
+    await recordEvent(tmp, {
+      type: "evidence.added",
+      slug: "ship",
+      data: {
+        evidence_id: evidence.id,
+        kind: evidence.kind,
+        exit_code: evidence.exit_code,
+        sha256: evidence.sha256!,
+        artifact_paths: evidence.artifact_paths,
+      },
+    });
+    await recordEvent(tmp, {
+      type: "review.added",
+      slug: "ship",
+      data: { review_id: review.id, verdict: review.verdict, artifact_sha256: review.artifact_sha256 },
+    });
+
+    const result = await doctor(tmp);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.join("\n")).toContain("invalid done claim for ship");
+    expect(result.errors.join("\n")).toContain("after done claim");
+  });
+
 });
 
 async function configureGatedFastCommand(root: string): Promise<void> {
