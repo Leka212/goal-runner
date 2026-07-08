@@ -11,6 +11,7 @@ import { ensureDir, writeJsonFile } from "../core/fs.js";
 import { appendGoalStep, startGoal, stopGoal } from "../core/goals.js";
 import { readGoalStatus } from "../core/status.js";
 import { detectPublishLeaks } from "../core/redaction.js";
+import { buildStatusReport } from "../core/status-report.js";
 import { verifyCommand } from "../core/verify.js";
 import { buildClaudeForOssDossier } from "../oss/dossier.js";
 import { validateBySchema } from "../core/schemas.js";
@@ -95,6 +96,16 @@ export async function runCli(argv: string[], cwd = process.cwd()): Promise<numbe
   program.command("dashboard").action(async () => {
     await buildDashboard(cwd);
   });
+
+  program
+    .command("status-report")
+    .option("--out <path>", "output path inside the current workspace", "GOAL_STATUS.md")
+    .action(async (options: StatusReportCliOptions) => {
+      const outPath = resolveWorkspacePath(cwd, options.out);
+      const markdown = await buildStatusReport(cwd);
+      await ensureDir(path.dirname(outPath));
+      await writeFile(outPath, markdown, "utf8");
+    });
 
   program
     .command("query")
@@ -283,6 +294,10 @@ interface OssDossierCliOptions {
 
 interface AdapterCliOptions {
   out?: string;
+}
+
+interface StatusReportCliOptions {
+  out: string;
 }
 
 function collectListOption(value: string, previous: string[]): string[] {

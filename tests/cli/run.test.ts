@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCli } from "../../src/cli/run.js";
 import { addEvidence } from "../../src/core/evidence.js";
+import { detectPublishLeaks } from "../../src/core/redaction.js";
 
 let tmp: string | undefined;
 
@@ -486,6 +487,60 @@ redaction:
     expect(output.exitCode).toBe(0);
     expect(after).toEqual(before);
     expect(await readFile(path.join(tmp, "clean.md"), "utf8")).toBe("Safe local content.\n");
+  });
+
+  it("writes GOAL_STATUS.md by default from goal status-report", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+
+    expect(await runCli(["init"], tmp)).toBe(0);
+    expect(await runCli(["start", "ship-cli", "Ship CLI", "--acceptance", "status report reviewed"], tmp)).toBe(0);
+
+    const output = await captureStdio(() => runCli(["status-report"], tmp));
+
+    expect(output.exitCode).toBe(0);
+    expect(output.stderr).toBe("");
+    const markdown = await readFile(path.join(tmp, "GOAL_STATUS.md"), "utf8");
+    expect(markdown).toMatch(/^# Goal Status\n/);
+    expect(markdown).toContain("| Goal | Title | Status | Outcome | Evidence | Reviews | Preflight | Done claim | Blockers |");
+    expect(markdown).toContain("ship-cli");
+    expect(detectPublishLeaks(markdown)).toEqual([]);
+  });
+
+  it("writes goal status-report to a requested output path inside the workspace", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+
+    expect(await runCli(["init"], tmp)).toBe(0);
+    expect(await runCli(["start", "ship-cli", "Ship CLI", "--acceptance", "status report reviewed"], tmp)).toBe(0);
+
+    const output = await captureStdio(() => runCli(["status-report", "--out", "reports/maintainer-status.md"], tmp));
+
+    expect(output.exitCode).toBe(0);
+    expect(output.stderr).toBe("");
+    const markdown = await readFile(path.join(tmp, "reports", "maintainer-status.md"), "utf8");
+    expect(markdown).toMatch(/^# Goal Status\n/);
+    expect(markdown).toContain("ship-cli");
+    await expect(readFile(path.join(tmp, "GOAL_STATUS.md"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects status-report outputs that are absolute or escape the workspace without writing outside", async () => {
+    tmp = await mkdtemp(path.join(os.tmpdir(), "goal-cli-"));
+    const workspace = path.join(tmp, "workspace");
+    await mkdir(workspace);
+    const absoluteOut = path.join(tmp, "absolute-status.md");
+    const escapingOut = path.join(tmp, "escape-status.md");
+
+    expect(await runCli(["init"], workspace)).toBe(0);
+    expect(await runCli(["start", "ship-cli", "Ship CLI", "--acceptance", "status report reviewed"], workspace)).toBe(0);
+
+    const safeOut = await captureStdio(() => runCli(["status-report", "--out", "inside-status.md"], workspace));
+    expect(safeOut.exitCode).toBe(0);
+    expect(await readFile(path.join(workspace, "inside-status.md"), "utf8")).toContain("ship-cli");
+
+    expect(await runCli(["status-report", "--out", absoluteOut], workspace)).toBe(1);
+    await expect(readFile(absoluteOut, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    expect(await runCli(["status-report", "--out", "../escape-status.md"], workspace)).toBe(1);
+    await expect(readFile(escapingOut, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("packs only runtime and public artifacts", () => {

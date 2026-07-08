@@ -21,6 +21,7 @@ This MVP is local-only. Commands operate on files in the current workspace, and 
 
 - YAML goal configuration with permission tiers, iteration limits, verification commands, review gates, and redaction rules.
 - Append-only `.goal/events.jsonl` ledger plus derived local status and dashboard files.
+- Maintainer-readable `GOAL_STATUS.md` reports with top blockers, risks, evidence, and review state.
 - Evidence capture for configured local commands with timeouts, output caps, hashes, and redacted artifacts.
 - Review gates that block `done` when required evidence or admissible review verdicts are missing.
 - OSS dossier helpers that keep verified, unknown, inferred, and unmet facts separate.
@@ -47,6 +48,13 @@ Generate adapter guidance without launching an agent:
 
 ```bash
 node dist/cli/index.js adapt agents-md "Synthetic Goal"
+```
+
+Generate a publish-safe maintainer status report:
+
+```bash
+node dist/cli/index.js status-report
+node dist/cli/index.js status-report --out reports/maintainer-status.md
 ```
 
 Run a public-safety check on a file:
